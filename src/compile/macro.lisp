@@ -8,7 +8,7 @@
          :append (cdr declaration))
    body))
 
-(defparameter *dynamic-extent-stack-list-allocation-p* #+sbcl t #-sbcl nil)
+(defparameter *emulate-stack-allocation-p* '(#-(or sbcl ccl) t))
 (defparameter *flatten-local-functions-p* nil)
 
 (defmacro parser-lambda ((input-var) &body body)
@@ -36,15 +36,10 @@
                                                     `(,cons-free (shiftf ,car nil))))))
                           (*codegen-make-list* (lambda (size)
                                                  (with-gensyms (list)
-                                                   (if *dynamic-extent-stack-list-allocation-p*
-                                                       (progn
-                                                         (push (cons list size) *codegen-list-vars*)
-                                                         list)
-                                                       (progn
-                                                         (push (cons list (- size)) *codegen-list-vars*)
-                                                         `(setf ,list ,(loop :for form := nil :then (funcall *codegen-cons* nil form)
-                                                                             :repeat size
-                                                                             :finally (return form))))))))
+                                                   (when *emulate-stack-allocation-p*
+                                                     (setf size (- size)))
+                                                   (push (cons list size) *codegen-list-vars*)
+                                                   list)))
                           (*codegen-labels* (if *flatten-local-functions-p*
                                                 (let ((local-functions nil))
                                                   (lambda (functions-or-body &optional (body nil bodyp))

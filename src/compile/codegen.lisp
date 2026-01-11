@@ -27,12 +27,17 @@
                                    :collect `(,var nil)))
                        (declare (dynamic-extent ,list)))
                      `(,(loop :for (var . size) :in *codegen-list-vars*
-                              :collect `(,var (make-list ,(max 0 size))))
+                              :if (plusp size)
+                                :collect `(,var (make-list ,size))
+                              :else :if (minusp size)
+                                :collect `(,var ,(loop :for form := nil :then (funcall *codegen-cons* nil form)
+                                                       :repeat (abs size) :finally (return form)))
+                              :else
+                                :collect `(,var nil))
                        (declare (dynamic-extent . ,(mapcar #'car (remove-if-not #'plusp *codegen-list-vars* :key #'cdr))))))
            (prog1 ,body
              ,@(loop :for (var . size) :in *codegen-list-vars*
-                     :if (zerop size) :collect (funcall *codegen-cons* var)
-                     :else :if (minusp size) :collect (funcall *codegen-cons* `(subseq ,var 0 ,(abs size))))))))))
+                     :unless (plusp size) :collect (funcall *codegen-cons* (if (zerop size) var `(subseq ,var 0 ,(abs size)))))))))))
 
 (defmacro with-fresh-stack (form)
   `(call-with-fresh-stack (lambda () ,form)))
