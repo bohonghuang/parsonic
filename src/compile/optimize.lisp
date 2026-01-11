@@ -41,11 +41,14 @@
         ((t &rest args) (declare (ignore args)) (cons (car form) (mapcar #'flatmap->map (cdr form)))))
       form))
 
+(defparameter *inline-sequence-eql-threshold* 8)
+
 (defun eql-list->eql* (form)
   (if (consp form)
       (destructuring-case form
         ((parser/list &rest parsers)
-         (if (every (curry #'eq 'parser/eql) (mapcar #'car parsers))
+         (if (and (every (curry #'eq 'parser/eql) (mapcar #'car parsers))
+                  (> (length parsers) *inline-sequence-eql-threshold*))
              `(parser/eql* ,(mapcar #'second parsers))
              (cons (car form) (mapcar #'eql-list->eql* (cdr form)))))
         ((t &rest args) (declare (ignore args))

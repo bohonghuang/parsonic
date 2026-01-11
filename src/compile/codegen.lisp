@@ -18,9 +18,10 @@
   `(values ,value t))
 
 (defun call-with-fresh-stack (body)
-  (with-gensyms (list block block-outer result errorp null)
+  (with-gensyms (list block block-outer result errorp)
     (let ((*codegen-list-vars* nil))
-      (let ((body (let ((*codegen-blocks* (cons block *codegen-blocks*))) (funcall body))))
+      (let ((null '#:null)
+            (body (let ((*codegen-blocks* (cons block *codegen-blocks*))) (funcall body))))
         `(let* ,@(if *merge-stack-list-allocation-p*
                      `(((,list (make-list ,(reduce #'+ *codegen-list-vars* :key (compose (curry #'max 0) #'cdr))))
                         . ,(loop :for (var . size) :in *codegen-list-vars*
@@ -62,13 +63,13 @@
        (with-gensyms (result)
          `(let ((,result ,(input-read/compile *codegen-input*)))
             (if (funcall ,predicate ,result)
-                ,result
+                ,(unless (ignore-results-p) result)
                 (return-from ,(car *codegen-blocks*) ,(codegen-parse-error))))))
       ((parser/eql object)
        (with-gensyms (result)
          `(let ((,result ,(input-read/compile *codegen-input*)))
             (if (eql ,result ,object)
-                ,object
+                ,(unless (ignore-results-p) object)
                 (return-from ,(car *codegen-blocks*) ,(codegen-parse-error))))))
       ((parser/eql* object)
        (with-gensyms (expected result)
@@ -76,7 +77,7 @@
                 :for ,result := ,(input-read/compile *codegen-input*)
                 :unless (eql ,result ,expected)
                   :do (return-from ,(car *codegen-blocks*) ,(codegen-parse-error))
-                :finally (return ',object))))
+                :finally (return ',(unless (ignore-results-p) object)))))
       ((parser/list &rest parsers)
        (if parsers
            (with-gensyms (var list)
@@ -134,6 +135,9 @@
                (if (function-identity-p function)
                    (body '(progn))
                    (with-fresh-stack (body `(,function))))))))
+      ((parser/unit signature parser)
+       (declare (ignore signature))
+       (codegen parser))
       ((parser/funcall function &rest args)
        (destructuring-ecase function
          ((lambda lambda-list &rest body)
@@ -173,7 +177,7 @@
          (if name
              (funcall *codegen-labels*
                       (list (list name lambda-list
-                                  (let ((*codegen-blocks* (cons name *codegen-blocks*)))
+                                  (let ((*codegen-blocks* (list name)))
                                     (with-fresh-stack (codegen body)))))
                       (codegen `(parser/call ,name . ,args)))
              `((lambda ,lambda-list ,(codegen body)) . ,args))))

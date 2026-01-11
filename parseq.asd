@@ -21,7 +21,8 @@
                                            (:file "optimize")
                                            (:file "codegen" :depends-on ("input" "expand" "optimize"))
                                            (:file "pool")
-                                           (:file "macro" :depends-on ("input" "expand" "codegen" "pool")))
+                                           (:file "extract")
+                                           (:file "macro" :depends-on ("input" "expand" "codegen" "pool" "extract")))
                               :depends-on ("package" "expand" "eval"))
                              (:file "macro" :depends-on ("package" "expand" "compile"))
                              (:module "sugar"

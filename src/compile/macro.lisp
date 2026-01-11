@@ -40,15 +40,23 @@
                                                      (setf size (- size)))
                                                    (push (cons list size) *codegen-list-vars*)
                                                    list)))
-                          (*codegen-labels* (if *flatten-local-functions-p*
-                                                (let ((local-functions nil))
-                                                  (lambda (functions-or-body &optional (body nil bodyp))
+                          (*codegen-labels* (let ((local-functions nil))
+                                              (lambda (functions-or-body &optional (body nil bodyp))
+                                                (if *flatten-local-functions-p*
                                                     (if bodyp
                                                         (progn (nconcf local-functions functions-or-body) body)
-                                                        `(labels ,local-functions ,functions-or-body))))
-                                                (lambda (functions-or-body &optional (body nil bodyp))
-                                                  (if bodyp
-                                                      `(labels ,functions-or-body ,body)
-                                                      functions-or-body)))))
-                      `(block ,block ,(funcall *codegen-labels* (with-fresh-stack (codegen (codegen-expand `(progn . ,body))))))))
+                                                        `(labels ,local-functions ,functions-or-body))
+                                                    (if bodyp
+                                                        `(labels ,functions-or-body ,body)
+                                                        functions-or-body))))))
+                      (multiple-value-bind (form functions) (extract/compile (codegen-expand `(progn . ,body)))
+                        (let ((body `(block ,block ,(funcall *codegen-labels* (with-fresh-stack (codegen form))))))
+                          (funcall
+                           *codegen-labels*
+                           (let ((*flatten-local-functions-p* nil))
+                             (funcall
+                              *codegen-labels*
+                              (loop :for (name lambda-list parser) :in functions
+                                    :collect (list name lambda-list (let ((*codegen-blocks* (list name))) (with-fresh-stack (codegen parser)))))
+                              body)))))))
                   input)))))))))
