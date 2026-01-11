@@ -14,10 +14,13 @@
   (destructuring-case form
     ((lambda lambda-list &rest body) (equal lambda-list body))))
 
+(defun codegen-parse-error (&optional (value (input-position/compile *codegen-input*)))
+  `(values ,value t))
+
 (defun call-with-fresh-stack (body)
-  (let ((*codegen-list-vars* nil))
-    (let ((body (funcall body)))
-      (with-gensyms (list)
+  (with-gensyms (list block block-outer result errorp null)
+    (let ((*codegen-list-vars* nil))
+      (let ((body (let ((*codegen-blocks* (cons block *codegen-blocks*))) (funcall body))))
         `(let* ,@(if *merge-stack-list-allocation-p*
                      `(((,list (make-list ,(reduce #'+ *codegen-list-vars* :key (compose (curry #'max 0) #'cdr))))
                         . ,(loop :for (var . size) :in *codegen-list-vars*
@@ -35,9 +38,13 @@
                               :else
                                 :collect `(,var nil))
                        (declare (dynamic-extent . ,(mapcar #'car (remove-if-not #'plusp *codegen-list-vars* :key #'cdr))))))
-           (prog1 ,body
+           (let* ((,errorp ',null)
+                  (,result (block ,block-outer (setf ,errorp (block ,block (return-from ,block-outer ,body))))))
              ,@(loop :for (var . size) :in *codegen-list-vars*
-                     :unless (plusp size) :collect (funcall *codegen-cons* (if (zerop size) var `(subseq ,var 0 ,(abs size)))))))))))
+                     :unless (plusp size) :collect (funcall *codegen-cons* (if (zerop size) var `(subseq ,var 0 ,(abs size)))))
+             (unless (eq ,errorp ',null)
+               (return-from ,(car *codegen-blocks*) ,(codegen-parse-error result)))
+             ,result))))))
 
 (defmacro with-fresh-stack (form)
   `(call-with-fresh-stack (lambda () ,form)))
@@ -46,8 +53,7 @@
   (optimize/compile (expand/compile form)))
 
 (defun codegen (form)
-  (flet ((parser-error () `(values ,(input-position/compile *codegen-input*) t))
-         (ignore-results-p () (ignore-errors (funcall *codegen-make-list*)))
+  (flet ((ignore-results-p () (ignore-errors (funcall *codegen-make-list*)))
          (ignore-results () (let ((make-list *codegen-make-list*))
                               (lambda (&optional size)
                                 (unless size make-list)))))
@@ -57,19 +63,19 @@
          `(let ((,result ,(input-read/compile *codegen-input*)))
             (if (funcall ,predicate ,result)
                 ,result
-                (return-from ,(car *codegen-blocks*) ,(parser-error))))))
+                (return-from ,(car *codegen-blocks*) ,(codegen-parse-error))))))
       ((parser/eql object)
        (with-gensyms (result)
          `(let ((,result ,(input-read/compile *codegen-input*)))
             (if (eql ,result ,object)
                 ,object
-                (return-from ,(car *codegen-blocks*) ,(parser-error))))))
+                (return-from ,(car *codegen-blocks*) ,(codegen-parse-error))))))
       ((parser/eql* object)
        (with-gensyms (expected result)
          `(loop :for ,expected :across ,(if (every #'characterp object) (coerce object 'simple-string) (coerce object 'simple-vector))
                 :for ,result := ,(input-read/compile *codegen-input*)
                 :unless (eql ,result ,expected)
-                  :do (return-from ,(car *codegen-blocks*) ,(parser-error))
+                  :do (return-from ,(car *codegen-blocks*) ,(codegen-parse-error))
                 :finally (return ',object))))
       ((parser/list &rest parsers)
        (if parsers
@@ -107,8 +113,8 @@
                      `(block ,short-circut
                         ,(let ((*codegen-blocks* (list short-circut)))
                            (recur (reverse parsers)))
-                        (return-from ,(car *codegen-blocks*) ,(parser-error)))))))
-           `(return-from ,(car *codegen-blocks*) ,(parser-error))))
+                        (return-from ,(car *codegen-blocks*) ,(codegen-parse-error)))))))
+           `(return-from ,(car *codegen-blocks*) ,(codegen-parse-error))))
       ((parser/filter (lambda lambda-list &rest body) &rest args)
        (assert (eq lambda 'lambda))
        (if (ignore-results-p)
@@ -175,7 +181,7 @@
        (with-gensyms (result errorp)
          `(multiple-value-bind (,result ,errorp) (,name . ,args)
             (if ,errorp
-                (return-from ,(car *codegen-blocks*) ,(parser-error))
+                (return-from ,(car *codegen-blocks*) ,(codegen-parse-error))
                 ,result))))
       ((parser/constantly object) object)
       ((parser/rep parser &optional (from 0) (to most-positive-fixnum))
@@ -203,7 +209,7 @@
               (setf ,list (cdr ,cons-root))
               (unless (>= ,counter ,from)
                 ,(funcall *codegen-cons* list)
-                (return-from ,(car *codegen-blocks*) ,(parser-error)))
+                (return-from ,(car *codegen-blocks*) ,(codegen-parse-error)))
               ,list)
            `(let ((,counter 0)
                   (,position ,(input-position/compile *codegen-input*)))
@@ -218,7 +224,7 @@
                       :finally (return-from ,block-outer))
                 ,(setf (input-position/compile *codegen-input*) position))
               (unless (>= ,counter ,from)
-                (return-from ,(car *codegen-blocks*) ,(parser-error))))))))))
+                (return-from ,(car *codegen-blocks*) ,(codegen-parse-error))))))))))
 
 (defmethod expand-expr/compile ((op (eql 'funcall)) &rest args)
   (destructuring-bind (function &rest parsers) args
