@@ -55,7 +55,7 @@
          (cons (car form) (mapcar #'eql-list->eql* (cdr form)))))
       form))
 
-(defparameter *optimize-passes* '(conses->list flatmap->map eql-list->eql*))
+(defparameter *optimize-passes* '(or->trie conses->list flatmap->map eql-list->eql*))
 
 (defun optimize/compile (initial)
   (loop :for form := initial :then (funcall pass form)

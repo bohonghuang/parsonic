@@ -228,7 +228,21 @@
                       :finally (return-from ,block-outer))
                 ,(setf (input-position/compile *codegen-input*) position))
               (unless (>= ,counter ,from)
-                (return-from ,(car *codegen-blocks*) ,(codegen-parse-error))))))))))
+                (return-from ,(car *codegen-blocks*) ,(codegen-parse-error)))))))
+      ((parser/case &rest branches)
+       (with-gensyms (position)
+         (let* ((default (car (assoc-value branches '_)))
+                (body `(case ,(input-read/compile *codegen-input*)
+                         ,@(loop :for (key parser) :in branches
+                                 :unless (eq key '_) :collect `((,key) ,(codegen parser)))
+                         (t . ,(if default
+                                   `(,(setf (input-position/compile *codegen-input*) position) ,(codegen default))
+                                   `((return-from ,(car *codegen-blocks*) ,(codegen-parse-error))))))))
+           (if default
+               `(let ((,position ,(input-position/compile *codegen-input*)))
+                  (declare (ignorable ,position))
+                  ,body)
+               body)))))))
 
 (defmethod expand-expr/compile ((op (eql 'funcall)) &rest args)
   (destructuring-bind (function &rest parsers) args

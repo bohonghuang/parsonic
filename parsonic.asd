@@ -18,7 +18,8 @@
                              (:module "compile"
                               :components ((:file "input")
                                            (:file "expand")
-                                           (:file "optimize")
+                                           (:file "trie")
+                                           (:file "optimize" :depends-on ("trie"))
                                            (:file "codegen" :depends-on ("input" "expand" "optimize"))
                                            (:file "pool")
                                            (:file "extract")
