@@ -100,21 +100,16 @@
            `(progn ,(codegen car) ,(codegen cdr) nil))))
       ((parser/or &rest parsers)
        (if parsers
-           (with-gensyms (position)
+           (with-gensyms (position block-outer)
              `(let ((,position ,(input-position/compile *codegen-input*)))
-                ,(labels ((recur (parsers)
-                            (with-gensyms (block)
-                              (let ((*codegen-blocks* (cons block *codegen-blocks*)))
-                                `(block ,block
-                                   ,@(when (cdr parsers)
-                                       `(,(recur (cdr parsers))
-                                         ,(setf (input-position/compile *codegen-input*) position)))
-                                   (return-from ,(lastcar *codegen-blocks*) ,(codegen (car parsers))))))))
-                   (with-gensyms (short-circut)
-                     `(block ,short-circut
-                        ,(let ((*codegen-blocks* (list short-circut)))
-                           (recur (reverse parsers)))
-                        (return-from ,(car *codegen-blocks*) ,(codegen-parse-error)))))))
+                (block ,block-outer
+                  ,@(loop :for parser :in parsers
+                          :for block := (gensym (string '#:block))
+                          :nconc (let ((*codegen-blocks* (cons block *codegen-blocks*)))
+                                   `((block ,block
+                                       (return-from ,block-outer ,(codegen parser)))
+                                     ,(setf (input-position/compile *codegen-input*) position))))
+                  (return-from ,(car *codegen-blocks*) ,(codegen-parse-error)))))
            `(return-from ,(car *codegen-blocks*) ,(codegen-parse-error))))
       ((parser/filter (lambda lambda-list &rest body) &rest args)
        (assert (eq lambda 'lambda))
