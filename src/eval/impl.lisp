@@ -17,10 +17,10 @@
   (setf (fdefinition 'parser-call) (fdefinition 'funcall)))
 
 (defun parser/satisfies (pred)
-  (lambda (input &aux (result (input-read/eval input)))
+  (lambda (input &aux (position (input-position/eval input)) (result (input-read/eval input)))
     (if (funcall pred result)
         result
-        (parser-error :position (1- (input-position/eval input)) :expected pred))))
+        (parser-error :position position :expected pred))))
 
 (defun parser/eql (object)
   (let ((parser (parser/satisfies (curry #'eql object))))
@@ -49,7 +49,7 @@
           :else
             :return result
           :do (setf (input-position/eval input) position)
-          :finally (return (parser-error :position (input-position/eval input) :expected (mapcar #'cdr errors))))))
+          :finally (return (parser-error :position (input-position/eval input) :expected (cons 'or (mapcar #'cdr errors)))))))
 
 (defun parser/or (&rest parsers)
   (parser/%or parsers))
@@ -85,10 +85,19 @@
           result
           (parser-call (apply function result) input)))))
 
+(defun parser/failfast (parser)
+  (lambda (input &aux (result (parser-call parser input)))
+    (if (parser-error-p result)
+        (throw 'parser-run result)
+        result)))
+
 (defgeneric expand/eval (object)
   (:method ((symbol symbol)) symbol)
   (:method ((integer integer)) integer)
   (:method ((list list)) (apply #'expand-expr list)))
 
 (defun parser-run (parser input)
-  (call-with-input/eval (lambda (input) (parser-call parser input)) input))
+  (catch 'parser-run
+    (call-with-input/eval
+     (lambda (input) (parser-call parser input))
+     input)))
