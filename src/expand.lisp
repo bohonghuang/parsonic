@@ -27,12 +27,14 @@
     (destructuring-bind (object) args
       (expand-quote object)))
   (:method ((op (eql 'satisfies)) &rest args)
-    (destructuring-bind (object) args
-      (with-gensyms (result)
-        `(parser/satisfies
-          (lambda (,result)
-            (unless (eql ,result +input-eof+)
-              (funcall ,object ,result)))))))
+    (destructuring-bind (predicate) args
+      (if (equal predicate '(constantly nil))
+          '(parser/satisfies (constantly nil))
+          (with-gensyms (result)
+            `(parser/satisfies
+              (lambda (,result)
+                (unless (eql ,result +input-eof+)
+                  (funcall ,predicate ,result))))))))
   (:method ((op (eql 'eql)) &rest args)
     (destructuring-bind (object) args
       `(parser/eql ,object)))
@@ -40,7 +42,8 @@
     (destructuring-bind (car cdr) args
       `(parser/cons ,(expand car) ,(expand cdr))))
   (:method ((op (eql 'or)) &rest args)
-    `(parser/or . ,(mapcar #'expand args)))
+    (destructuring-bind (a b) args
+      `(parser/or ,(expand a) ,(expand b))))
   (:method ((op (eql 'constantly)) &rest args)
     (destructuring-bind (object) args
       `(parser/constantly ,object)))
