@@ -1,5 +1,15 @@
 (in-package #:parsonic)
 
+(defmethod expand-expr :around ((op (eql 'satisfies)) &rest args)
+  (destructuring-bind (predicate) args
+    (if (equal predicate '(constantly nil))
+        (call-next-method)
+        (call-next-method
+         op (with-gensyms (result)
+              `(lambda (,result)
+                 (unless (eql ,result +input-eof+)
+                   (funcall ,predicate ,result))))))))
+
 (defparser opt (parser)
   (or parser (constantly nil)))
 

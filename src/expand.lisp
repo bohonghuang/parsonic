@@ -28,13 +28,7 @@
       (expand-quote object)))
   (:method ((op (eql 'satisfies)) &rest args)
     (destructuring-bind (predicate) args
-      (if (equal predicate '(constantly nil))
-          '(parser/satisfies (constantly nil))
-          (with-gensyms (result)
-            `(parser/satisfies
-              (lambda (,result)
-                (unless (eql ,result +input-eof+)
-                  (funcall ,predicate ,result))))))))
+      `(parser/satisfies ,predicate)))
   (:method ((op (eql 'eql)) &rest args)
     (destructuring-bind (object) args
       `(parser/eql ,object)))
