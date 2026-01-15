@@ -9,6 +9,13 @@
         :for arg :in (reverse args)
         :finally (return body)))
 
+(defmethod expand-expr ((op (eql 'or)) &rest args)
+  (if args
+      (loop :for arg :in (reverse args)
+            :for body := (expand arg) :then `(parser/or ,(expand arg) ,body)
+            :finally (return body))
+      (expand '(satisfies (constantly nil)))))
+
 (defmethod expand-expr ((op (eql 'progn)) &rest args)
   (with-gensyms (var)
     (expand `(for ((nil (list . ,(butlast args)))
