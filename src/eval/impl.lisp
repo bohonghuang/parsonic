@@ -32,18 +32,20 @@
                 cdr
                 (cons car cdr)))))))
 
-(defun parser/or (parser-a parser-b)
+(defun parser/%or (parsers)
   (lambda (input)
-    (let ((position (input-position/eval input))
-          (result-a (parser-call parser-a input)))
-      (if (parser-error-p result-a)
-          (progn
-            (setf (input-position/eval input) position)
-            (let ((result-b (parser-call parser-b input)))
-              (if (parser-error-p result-b)
-                  (parser-error :position position :expected (list 'or (cdr result-a) (cdr result-b)))
-                  result-b)))
-          result-a))))
+    (loop :with position := (input-position/eval input)
+          :for parser :in parsers
+          :for result := (parser-call parser input)
+          :if (parser-error-p result)
+            :collect result :into errors
+          :else
+            :return result
+          :do (setf (input-position/eval input) position)
+          :finally (return (parser-error :position (input-position/eval input) :expected (cons 'or (mapcar #'cdr errors)))))))
+
+(defun parser/or (&rest parsers)
+  (parser/%or parsers))
 
 (defun parser/rep (parser from to)
   (check-type from non-negative-fixnum)
