@@ -7,7 +7,7 @@
         (call-next-method
          op (with-gensyms (result)
               `(lambda (,result)
-                 (unless (eql ,result +input-eof+)
+                 (unless (eq ,result +input-eof+)
                    (funcall ,predicate ,result))))))))
 
 (defmethod expand-expr :around ((op (eql 'rep)) &rest args)
