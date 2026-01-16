@@ -33,8 +33,7 @@
     (destructuring-bind (car cdr) args
       `(parser/cons ,(expand car) ,(expand cdr))))
   (:method ((op (eql 'or)) &rest args)
-    (destructuring-bind (a b) args
-      `(parser/or ,(expand a) ,(expand b))))
+    `(parser/or . ,(mapcar #'expand args)))
   (:method ((op (eql 'constantly)) &rest args)
     (destructuring-bind (object) args
       `(parser/constantly ,object)))
