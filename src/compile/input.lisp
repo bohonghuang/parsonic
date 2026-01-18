@@ -19,7 +19,7 @@
 (defvar *input-index*)
 (defvar *input-length*)
 
-(define-constant +input-type-simple-array-character+ '(simple-array character (*)) :test #'equal)
+(defconstant +input-type-simple-array-character+ (intern (princ-to-string '(simple-array character (*)))))
 
 (defmethod call-with-input/compile (body (input (eql +input-type-simple-array-character+)))
   (with-gensyms (index length)
@@ -44,4 +44,4 @@
          (prog1 (aref ,(intern (princ-to-string input)) ,index) (incf ,index))
          +input-eof+)))
 
-(setf (assoc-value *input-type-mappings* +input-type-simple-array-character+ :test #'equal) +input-type-simple-array-character+)
+(setf (assoc-value *input-type-mappings* '(simple-array character (*)) :test #'equal) +input-type-simple-array-character+)
