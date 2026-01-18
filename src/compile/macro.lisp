@@ -1,13 +1,5 @@
 (in-package #:parsonic)
 
-(defun body-declarations (body)
-  (values
-   (loop :for (declaration . rest) :on body
-         :while (and (listp declaration) (eq (car declaration) 'declare))
-         :do (setf body rest)
-         :append (cdr declaration))
-   body))
-
 (defparameter *emulate-stack-allocation-p* '(#-(or sbcl ccl) t))
 (defparameter *flatten-local-functions-p* nil)
 

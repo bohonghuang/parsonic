@@ -57,30 +57,33 @@
         ((t &rest args) (cons (car form) (mapcar #'apply->funcall args))))
       form))
 
+(defun body-declarations (body)
+  (values
+   (loop :for (declaration . rest) :on body
+         :while (and (listp declaration) (eq (car declaration) 'declare))
+         :do (setf body rest)
+         :append (cdr declaration))
+   body))
+
 (defun flatmap->map (form)
   (if (consp form)
       (destructuring-case form
         ((parser/funcall function &rest parsers)
          (destructuring-ecase function
            ((lambda lambda-list &rest body)
-            (destructuring-case (ensure-list (lastcar body))
-              ((parser/constantly value &aux (parser (first parsers)))
-               (destructuring-ecase value
-                 ((destructuring-bind args list &rest body &aux (parsers (cdr parser)))
-                  (assert (equal (list list) lambda-list))
-                  (assert (eq (car parser) 'parser/list))
-                  (let ((ignored-args (loop :for form := (car body)
-                                            :while (consp form)
-                                            :while (eq (car form) 'declare)
-                                            :append (assoc-value (cdr form) 'ignore)
-                                            :do (setf body (cdr body)))))
-                    `(parser/filter
-                      (lambda ,(loop :for arg :in args :if (member arg ignored-args) :collect nil :else :collect arg)
-                        ,@body)
-                      . ,(mapcar #'flatmap->map parsers))))))
-              ((t &rest args) (declare (ignore args)) `(parser/funcall ,function . ,(mapcar #'flatmap->map parsers)))))))
-        ((parser/apply function parser)
-         `(parser/apply ,function ,(flatmap->map parser)))
+            (multiple-value-bind (declarations body) (body-declarations body)
+              (if (and (equal body `((parser/constantly ,(second (first body)))))
+                       (null (intersection lambda-list lambda-list-keywords)))
+                  (destructuring-ecase (first body)
+                    ((parser/constantly value)
+                     (let ((args lambda-list)
+                           (ignored-args (loop :for (type . args) :in declarations :when (eq type 'ignore) :append args)))
+                       `(parser/filter
+                         (lambda ,(loop :for arg :in args :if (member arg ignored-args) :collect nil :else :collect arg)
+                           ,value)
+                         . ,(mapcar #'flatmap->map parsers)))))
+                  `(parser/funcall ,function . ,(mapcar #'flatmap->map parsers)))))))
+        ((parser/apply function parser) `(parser/apply ,function ,(flatmap->map parser)))
         ((t &rest args) (declare (ignore args)) (cons (car form) (mapcar #'flatmap->map (cdr form)))))
       form))
 
