@@ -1,15 +1,5 @@
 (in-package #:parseq)
 
-(defun walk-parsers-in-lambda (function form)
-  (typecase form
-    (null form)
-    (proper-list
-     (destructuring-case form
-       ((with-codegen parser)
-        `(with-codegen ,(funcall function parser)))
-       ((t &rest args) (cons (car form) (mapcar (curry #'walk-parsers-in-lambda function) args)))))
-    (t form)))
-
 (defun let->body (form &optional env-bindings)
   (if (consp form)
       (destructuring-case form

@@ -42,4 +42,18 @@
       `(parser/rep ,(expand parser) ,from ,to)))
   (:method ((op (eql 'apply)) &rest args)
     (destructuring-bind (function parser) args
-      `(parser/apply ,function ,(expand parser)))))
+      `(parser/apply ,function ,(expand parser))))
+  (:method ((op (eql 'function)) &rest args)
+    `(function . ,(expand args)))
+  (:method ((op (eql 'lambda)) &rest args)
+    (destructuring-bind (lambda-list &rest body) args
+      `(lambda ,lambda-list . ,body)))
+  (:method ((op (eql 'curry)) &rest args)
+    (destructuring-bind (function &rest args) args
+      `(curry ,(expand function) . ,args)))
+  (:method ((op (eql 'rcurry)) &rest args)
+    (destructuring-bind (function &rest args) args
+      `(rcurry ,(expand function) . ,args)))
+  (:method ((op (eql 'parser-call)) &rest args)
+    (destructuring-bind (function &rest args) args
+      `(parser-call ,(expand function) . ,(mapcar #'expand args)))))

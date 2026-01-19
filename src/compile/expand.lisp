@@ -10,7 +10,12 @@
 
 (defstruct parser-arg
   (parser #'values :type function)
-  (binding nil :type list))
+  (binding nil :type list)
+  (value nil :type t))
+
+(defmethod make-load-form ((arg parser-arg) &optional env)
+  (declare (ignore env))
+  (parser-arg-value arg))
 
 (defgeneric expand/compile (form)
   (:method ((expr list))
@@ -62,12 +67,13 @@
                   (let (arg)
                     (setf (get lexical 'lexical-store) t
                           arg (make-parser-arg
-                               :parser (lambda ()
+                               :parser (lambda (&optional (function #'expand/compile))
                                          (pushnew name parser-arg-names)
                                          (setf (second (parser-arg-binding arg)) (first (parser-arg-binding arg)))
                                          (let ((*expand/compile-env* parent-env))
-                                           (expand/compile value)))
-                               :binding (list name lexical)))))))
+                                           (funcall function value)))
+                               :binding (list name lexical)
+                               :value value))))))
          (let* ((lambda-list-args
                   (loop :with sequential-binding-p := nil
                         :for (name default-value) :in (mapcar #'ensure-list lambda-list)
@@ -75,11 +81,20 @@
                         :if (member name lambda-list-keywords)
                           :do (setf sequential-binding-p t)
                         :else
-                          :collect (cons name
-                                         (let ((*expand/compile-env* (if sequential-binding-p
-                                                                         (append lambda-list-args *expand/compile-env*)
-                                                                         *expand/compile-env*)))
-                                           (parser-arg name value)))
+                          :nconc (let ((*expand/compile-env* (if sequential-binding-p
+                                                                 (append lambda-list-args *expand/compile-env*)
+                                                                 *expand/compile-env*)))
+                                   (labels ((recur (name value)
+                                              (typecase value
+                                                (parser-arg
+                                                 (let ((arg (copy-parser-arg value)))
+                                                   (list (cons name (parser-arg name (first (parser-arg-binding arg)))))))
+                                                ((cons (member curry rcurry) list)
+                                                 (let ((curry-args (loop :for arg :in (cdr value)
+                                                                         :collect (with-gensyms (curry) (cons curry (parser-arg curry arg))))))
+                                                   (cons (cons name (parser-arg name (cons (car value) (mapcar #'cdr curry-args)))) curry-args)))
+                                                (t (list (cons name (parser-arg name value)))))))
+                                     (recur name value)))
                             :into lambda-list-args
                         :finally (return lambda-list-args)))
                 (arg-info (ensure-gethash
@@ -120,6 +135,16 @@
            (assert result)
            result))))))
 
+(defun walk-parsers-in-lambda (function form)
+  (typecase form
+    (null form)
+    (proper-list
+     (destructuring-case form
+       (((with-codegen parser) parser)
+        `(with-codegen ,(funcall function parser)))
+       ((t &rest args) (cons (car form) (mapcar (curry #'walk-parsers-in-lambda function) args)))))
+    (t form)))
+
 (defmethod expand-expr/compile ((op (eql 'apply)) &rest args)
   (destructuring-bind (function parser) args
     (receive-lexical-env
@@ -134,15 +159,40 @@
                                                      (setf (get lexical 'lexical-store) t)
                                                      (make-parser-arg
                                                       :parser (curry #'error 'error)
-                                                      :binding (list name lexical))))))
-                 (*expand/compile-env* #+nil nil #-nil (append args *expand/compile-env*)))
-            (labels ((walk (form)
-                       (typecase form
-                         (null form)
-                         (proper-list
-                          (destructuring-case form
-                            ((parser parser) `(with-codegen ,(#+nil prog1 #-nil send-lexical-env (expand/compile parser) args)))
-                            ((t &rest args) (cons (car form) (mapcar #'walk args)))))
-                         (t form))))
-              (walk function))))
+                                                      :binding (list name lexical)
+                                                      :value name)))))
+                 (*expand/compile-env* (append args *expand/compile-env*)))
+            (walk-parsers-in-lambda (lambda (parser) (send-lexical-env (expand/compile parser) args)) function)))
        ,(expand parser)))))
+
+(defmethod expand-expr/compile ((op (eql 'parser-call)) &rest args)
+  (destructuring-bind (function &rest args) args
+    (labels ((recur (object largs rargs)
+               (etypecase (print object)
+                 (parser-arg
+                  (funcall (parser-arg-parser object) (rcurry #'recur largs rargs)))
+                 (symbol
+                  (recur (assoc-value *expand/compile-env* object) largs rargs))
+                 (cons
+                  (destructuring-ecase object
+                    ((curry function &rest args)
+                     (recur function (append largs args) rargs))
+                    ((rcurry function &rest args)
+                     (recur function largs (append args rargs)))
+                    ((function function)
+                     (expand/compile `(,function ,@largs ,@rargs))))))))
+      (recur function nil args))))
+
+(defparser ff (a b c)
+  (constantly (list a b c)))
+
+(defparser f1 (f i)
+  (parser-call f i))
+
+(defparser f2 (f j)
+  (f1 (curry f j) j))
+
+(defparser f3 ()
+  (f2 (curry #'ff 2) 1))
+
+(expand/compile '(f3))
