@@ -245,17 +245,3 @@
       ((parser/cut parser)
        (let ((*codegen-blocks* (cons (lastcar *codegen-blocks*) *codegen-blocks*)))
          (codegen parser))))))
-
-(defmethod expand-expr/compile ((op (eql 'apply)) &rest args)
-  (destructuring-bind (function parser) args
-    `(parser/apply
-      ,(labels ((walk (form)
-                  (typecase form
-                    (null form)
-                    (proper-list
-                     (destructuring-case form
-                       ((parser parser) `(with-codegen ,(codegen-expand parser)))
-                       ((t &rest args) (cons (car form) (mapcar #'walk args)))))
-                    (t form))))
-         (walk function))
-      ,(expand parser))))

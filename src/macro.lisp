@@ -24,7 +24,12 @@
        ,(let ((name (parser-name-symbol name)))
           (with-gensyms (self input args)
             (multiple-value-bind (funcall-args funcall) (lambda-list-arguments lambda-list)
-              `(defun ,name ,lambda-list
+              `(defun ,name ,(loop :for arg :in lambda-list
+                                   :for (name value) := (ensure-list arg)
+                                   :if value
+                                     :collect `(,name (parser ,value))
+                                   :else
+                                     :collect arg)
                  (if (boundp ',name)
                      (,funcall (symbol-value ',name) . ,funcall-args)
                      (let* ((,self #'values)
@@ -37,7 +42,13 @@
        ,(with-gensyms (op args)
           `(eval-when (:compile-toplevel :load-toplevel :execute)
              (defmethod expand-expr/compile ((,op (eql ',name)) &rest ,args)
-               (destructuring-bind ,lambda-list ,args
+               (destructuring-bind ,(loop :for arg :in lambda-list
+                                          :for (name value) := (ensure-list arg)
+                                          :if value
+                                            :collect `(,name (quote ,value))
+                                          :else
+                                            :collect arg)
+                   ,args
                  (%expand-expr/compile
                   ',name
                   ',lambda-list
