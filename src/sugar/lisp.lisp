@@ -16,8 +16,8 @@
          `(apply
            (lambda ,args
              (declare (ignore . ,ignored) . ,declarations)
-             ,(expand
-               (case (length body)
+             (parser
+              ,(case (length body)
                  (0 '(or))
                  (1 (first body))
                  (t `(progn . ,body)))))
