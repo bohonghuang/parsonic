@@ -31,8 +31,9 @@
   (if-let ((lexical-env
             (loop :for (name . arg) :in *expand/compile-env*
                   :for binding := (parser-arg-binding arg)
-                  :unless (member (first binding) bindings :key #'first)
-                    :collect binding :into bindings
+                  :when (eq name (first binding))
+                    :unless (member (first binding) bindings :key #'first)
+                      :collect binding :into bindings
                   :finally (return bindings))))
     `(parser/let nil ,lexical-env ,form)
     form))
@@ -73,7 +74,16 @@
                                          (let ((*expand/compile-env* parent-env))
                                            (funcall function value)))
                                :binding (list name lexical)
-                               :value value))))))
+                               :value value)))))
+              (curry-arg (name value &optional (parent-env *expand/compile-env*))
+                (let (arg)
+                  (setf arg (make-parser-arg
+                             :parser (lambda (&optional (function #'expand/compile))
+                                       (setf (first (parser-arg-binding arg)) (second (parser-arg-binding arg)))
+                                       (let ((*expand/compile-env* parent-env))
+                                         (funcall function value)))
+                             :binding (list value name)
+                             :value name)))))
          (let* ((lambda-list-args
                   (loop :with sequential-binding-p := nil
                         :for (name default-value) :in (mapcar #'ensure-list lambda-list)
@@ -87,11 +97,10 @@
                                    (labels ((recur (name value)
                                               (typecase value
                                                 (parser-arg
-                                                 (let ((arg (copy-parser-arg value)))
-                                                   (list (cons name (parser-arg name (first (parser-arg-binding arg)))))))
+                                                 (list (cons name (parser-arg name (parser-arg-value value)))))
                                                 ((cons (member curry rcurry) list)
                                                  (let ((curry-args (loop :for arg :in (cdr value)
-                                                                         :collect (with-gensyms (curry) (cons curry (parser-arg curry arg))))))
+                                                                         :collect (with-gensyms (curry) (cons curry (curry-arg curry arg))))))
                                                    (cons (cons name (parser-arg name (cons (car value) (mapcar #'cdr curry-args)))) curry-args)))
                                                 (t (list (cons name (parser-arg name value)))))))
                                      (recur name value)))
@@ -111,9 +120,9 @@
                 (lambda-list (loop :for arg :in lambda-list
                                    :unless (member (car (ensure-list arg)) parser-arg-names)
                                      :collect arg))
-                (variables (loop :for (name . arg) :in args
+                (variables (loop :for (name . nil) :in args
                                  :unless (member name parser-arg-names)
-                                   :collect (list name arg)))
+                                   :collect (list name (parser-arg-value (assoc-value lambda-list-args name)))))
                 (known (cons (cons (cons name parsers) nil) *expand/compile-known*))
                 (result (let ((*expand/compile-env* lambda-list-args)
                               (*expand/compile-known* known)
@@ -168,7 +177,7 @@
 (defmethod expand-expr/compile ((op (eql 'parser-call)) &rest args)
   (destructuring-bind (function &rest args) args
     (labels ((recur (object largs rargs)
-               (etypecase (print object)
+               (etypecase object
                  (parser-arg
                   (funcall (parser-arg-parser object) (rcurry #'recur largs rargs)))
                  (symbol
@@ -176,23 +185,38 @@
                  (cons
                   (destructuring-ecase object
                     ((curry function &rest args)
-                     (recur function (append largs args) rargs))
+                     (recur function (append args largs) rargs))
                     ((rcurry function &rest args)
-                     (recur function largs (append args rargs)))
+                     (recur function largs (append rargs args)))
                     ((function function)
-                     (expand/compile `(,function ,@largs ,@rargs))))))))
+                     (let ((*expand/compile-env* (nconc
+                                                  (loop :for arg :in (append largs rargs)
+                                                        :when (parser-arg-p arg)
+                                                          :collect (cons (second (parser-arg-binding arg)) arg))
+                                                  *expand/compile-env*))
+                           (args (loop :for arg :in (append largs rargs)
+                                       :if (parser-arg-p arg)
+                                         :collect (parser-arg-value arg)
+                                       :else
+                                         :collect arg)))
+                       (expand/compile `(,function . ,args)))))))))
       (recur function nil args))))
 
-(defparser ff (a b c)
-  (constantly (list a b c)))
+(defparser ff (f a b c)
+  (list f (constantly (list a b c))))
 
-(defparser f1 (f i)
-  (parser-call f i))
+(defparser f1 (f2 i)
+  (parser-call f2 i))
 
-(defparser f2 (f j)
-  (f1 (curry f j) j))
+(defparser f2 (f1 j)
+  (f1 (curry f1 j) j))
 
-(defparser f3 ()
-  (f2 (curry #'ff 2) 1))
+(defparser cc (x)
+  (constantly x))
 
-(expand/compile '(f3))
+(defparser f3 (i)
+  (f2 (curry #'ff (cc i) 2) 1))
+
+(codegen-expand '(f3 10))
+
+(funcall (curry (curry #'list 2) 1))
