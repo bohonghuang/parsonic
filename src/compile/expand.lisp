@@ -10,13 +10,16 @@
 
 (defstruct lexical-arg
   (parser #'values :type function)
-  (value nil :type t))
+  (binding nil :type list))
+
+(defun lexical-arg-name (arg)
+  (first (lexical-arg-binding arg)))
 
 (defgeneric lexical-arg-send (arg))
+
 (defgeneric lexical-arg-receive (arg))
 
-(defstruct (parser-arg (:include lexical-arg))
-  (binding nil :type list))
+(defstruct (parser-arg (:include lexical-arg)))
 
 (defmethod lexical-arg-send ((arg parser-arg))
   (reverse (parser-arg-binding arg)))
@@ -24,8 +27,20 @@
 (defmethod lexical-arg-receive ((arg parser-arg))
   (parser-arg-binding arg))
 
-(defstruct (curry-arg (:include lexical-arg))
-  (binding nil :type list))
+(defun parser-arg (name value &optional (parser-arg-names (cons nil nil)))
+  (with-gensyms (lexical)
+    (let (arg)
+      (setf (get lexical 'lexical-store) t
+            arg (make-parser-arg
+                 :parser (let ((parent-env *expand/compile-env*))
+                           (lambda (&optional (function #'expand/compile))
+                             (pushnew name (cdr parser-arg-names))
+                             (setf (second (parser-arg-binding arg)) (first (parser-arg-binding arg)))
+                             (let ((*expand/compile-env* parent-env))
+                               (funcall function value))))
+                 :binding (list name lexical))))))
+
+(defstruct (curry-arg (:include lexical-arg)))
 
 (defmethod lexical-arg-send ((arg curry-arg))
   (curry-arg-binding arg))
@@ -33,19 +48,30 @@
 (defmethod lexical-arg-receive ((arg curry-arg))
   nil)
 
+(defun curry-arg (value)
+  (with-gensyms (curry)
+    (let (arg)
+      (setf arg (let ((parent-env *expand/compile-env*))
+                  (make-curry-arg
+                   :parser (lambda (&optional (function #'expand/compile))
+                             (setf (second (curry-arg-binding arg)) (first (curry-arg-binding arg)))
+                             (let ((*expand/compile-env* parent-env))
+                               (funcall function value)))
+                   :binding (list curry value)))))))
+
 (defgeneric expand/compile (form)
   (:method ((expr list))
     (let ((*expand* #'expand/compile))
       (apply #'expand-expr/compile expr)))
   (:method ((symbol symbol))
     (assert (not (keywordp symbol)))
-    (if-let ((cons (assoc symbol *expand/compile-env*)))
-      (funcall (lexical-arg-parser (cdr cons)))
+    (if-let ((arg (find symbol *expand/compile-env* :key #'lexical-arg-name)))
+      (funcall (lexical-arg-parser arg))
       symbol)))
 
 (defun receive-lexical-env (form)
   (if-let ((lexical-env
-            (loop :for (name . arg) :in *expand/compile-env*
+            (loop :for arg :in *expand/compile-env*
                   :for binding := (lexical-arg-receive arg)
                   :when binding
                     :unless (member (first binding) bindings :key #'first)
@@ -55,7 +81,7 @@
     form))
 
 (defun send-lexical-env (form env)
-  (if-let ((lexical-env (loop :for (name . arg) :in env
+  (if-let ((lexical-env (loop :for arg :in env
                               :for binding := (lexical-arg-send arg)
                               :when binding
                                 :collect binding)))
@@ -64,61 +90,40 @@
 
 (defun %expand-expr/compile (name lambda-list args body)
   (receive-lexical-env
-   (if-let ((fdef (loop :for fdef :in *expand/compile-known*
-                        :for ((fname . fargs) . nil) := fdef
-                        :when (eq name fname)
-                          :when (loop :for (name . value) :in fargs
-                                      :always (equal (assoc-value args name) value))
-                            :return fdef)))
-     (let ((fname (etypecase (cdr fdef)
-                    (boolean (setf (cdr fdef) (gensym (string name))))
-                    (symbol (cdr fdef)))))
-       (loop :for caller-fdef :in *expand/compile-known*
-             :until (eq fdef caller-fdef)
-             :unless (cdr caller-fdef)
-               :do (setf (cdr caller-fdef) t))
-       `(parser/call ,fname . ,(mapcar #'cdr (remove-if (rcurry #'member (cdar fdef) :key #'car) args :key #'car))))
-     (let ((parser-arg-names nil)
-           (parser-arg-cache (or *expand/compile-args* (make-hash-table :test #'eq))))
-       (flet ((parser-arg (name value &optional (parent-env *expand/compile-env*))
-                (with-gensyms (lexical)
-                  (let (arg)
-                    (setf (get lexical 'lexical-store) t
-                          arg (make-parser-arg
-                               :parser (lambda (&optional (function #'expand/compile))
-                                         (pushnew name parser-arg-names)
-                                         (setf (second (parser-arg-binding arg)) (first (parser-arg-binding arg)))
-                                         (let ((*expand/compile-env* parent-env))
-                                           (funcall function value)))
-                               :binding (list name lexical)
-                               :value value)))))
-              (curry-arg (name value &optional (parent-env *expand/compile-env*))
-                (let (arg)
-                  (setf arg (make-curry-arg
-                             :parser (lambda (&optional (function #'expand/compile))
-                                       (setf (curry-arg-binding arg) nil)
-                                       (let ((*expand/compile-env* parent-env))
-                                         (funcall function value)))
-                             :binding (list name value)
-                             :value name)))))
+   (let ((lambda-list-args (loop :for (name default-value) :in (mapcar #'ensure-list lambda-list)
+                                 :collect (cons name (if-let ((cons (assoc name args))) (cdr cons) default-value)))))
+     (if-let ((fdef (loop :for fdef :in *expand/compile-known*
+                          :for ((fname . fargs) . nil) := fdef
+                          :when (eq name fname)
+                            :when (loop :for (name . value) :in fargs
+                                        :always (equal (assoc-value lambda-list-args name) value))
+                              :return fdef)))
+       (let ((fname (etypecase (cdr fdef)
+                      (boolean (setf (cdr fdef) (gensym (string name))))
+                      (symbol (cdr fdef)))))
+         (loop :for caller-fdef :in *expand/compile-known*
+               :until (eq fdef caller-fdef)
+               :unless (cdr caller-fdef)
+                 :do (setf (cdr caller-fdef) t))
+         `(parser/call ,fname . ,(mapcar #'cdr (remove-if (rcurry #'member (cdar fdef) :key #'car) args :key #'car))))
+       (let ((parser-arg-names (cons nil nil))
+             (parser-arg-cache (or *expand/compile-args* (make-hash-table :test #'eq))))
          (let* ((lexical-args
                   (loop :with sequential-binding-p := nil
-                        :for (name default-value) :in (mapcar #'ensure-list lambda-list)
-                        :for value := (if-let ((cons (assoc name args))) (cdr cons) default-value)
+                        :for (name . value) :in lambda-list-args
                         :if (member name lambda-list-keywords)
                           :do (setf sequential-binding-p t)
                         :else
-                          :nconc (let ((*expand/compile-env* (if sequential-binding-p
-                                                                 (append lexical-args *expand/compile-env*)
-                                                                 *expand/compile-env*)))
-                                   (labels ((recur (name value)
-                                              (typecase value
-                                                ((cons (member curry rcurry) list)
-                                                 (let ((curry-args (loop :for arg :in (cdr value)
-                                                                         :collect (with-gensyms (curry) (cons curry (curry-arg curry arg))))))
-                                                   (cons (cons name (parser-arg name (cons (car value) (mapcar #'cdr curry-args)))) curry-args)))
-                                                (t (list (cons name (parser-arg name value)))))))
-                                     (recur name value)))
+                          :append (let ((*expand/compile-env* (if sequential-binding-p
+                                                                  (append lexical-args *expand/compile-env*)
+                                                                  *expand/compile-env*)))
+                                    (labels ((recur (name value)
+                                               (typecase value
+                                                 ((cons (member curry rcurry) list)
+                                                  (let ((curry-args (loop :for arg :in (cdr value) :collect (curry-arg arg))))
+                                                    (cons (parser-arg name (cons (car value) curry-args) parser-arg-names) curry-args)))
+                                                 (t (list (parser-arg name value parser-arg-names))))))
+                                      (recur name value)))
                             :into lexical-args
                         :finally (return lexical-args)))
                 (arg-info (ensure-gethash
@@ -179,12 +184,11 @@
           (let* ((args (loop :for arg :in lambda-list
                              :for (name) := (ensure-list arg)
                              :unless (member name lambda-list-keywords)
-                               :collect (cons name (with-gensyms (lexical)
-                                                     (setf (get lexical 'lexical-store) t)
-                                                     (make-parser-arg
-                                                      :parser (curry #'error 'error)
-                                                      :binding (list name lexical)
-                                                      :value name)))))
+                               :collect (with-gensyms (lexical)
+                                          (setf (get lexical 'lexical-store) t)
+                                          (make-parser-arg
+                                           :parser (curry #'error 'error)
+                                           :binding (list name lexical)))))
                  (*expand/compile-env* (append args *expand/compile-env*)))
             (walk-parsers-in-lambda (lambda (parser) (send-lexical-env (expand/compile parser) args)) function)))
        ,(expand parser)))))
@@ -195,8 +199,8 @@
                (etypecase object
                  (lexical-arg
                   (funcall (lexical-arg-parser object) (rcurry #'recur largs rargs)))
-                 (symbol
-                  (recur (assoc-value *expand/compile-env* object) largs rargs))
+                 ((and symbol (not null))
+                  (recur (find object *expand/compile-env* :key #'lexical-arg-name) largs rargs))
                  (cons
                   (destructuring-ecase object
                     ((curry function &rest args)
@@ -207,11 +211,11 @@
                      (let ((*expand/compile-env* (nconc
                                                   (loop :for arg :in (append largs rargs)
                                                         :when (curry-arg-p arg)
-                                                          :collect (cons (curry-arg-value arg) arg))
+                                                          :collect arg)
                                                   *expand/compile-env*))
                            (args (loop :for arg :in (append largs rargs)
                                        :if (curry-arg-p arg)
-                                         :collect (curry-arg-value arg)
+                                         :collect (lexical-arg-name arg)
                                        :else
                                          :collect arg)))
                        (expand/compile `(,function . ,args)))))))))
