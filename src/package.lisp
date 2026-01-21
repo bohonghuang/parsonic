@@ -5,6 +5,7 @@
    #:parser
    #:parser-run
    #:parser-lambda
+   #:parser-call
    #:for
    #:cut
    #:opt

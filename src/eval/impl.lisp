@@ -81,10 +81,32 @@
         (throw 'parser-run result)
         result)))
 
+(defgeneric expand-expr/eval (op &rest args)
+  (:method (op &rest args)
+    (apply #'expand-expr op args))
+  (:method ((op (eql 'function)) &rest args)
+    `(function . ,(expand args)))
+  (:method ((op (eql 'lambda)) &rest args)
+    (destructuring-bind (lambda-list &rest body) args
+      `(lambda ,lambda-list . ,body)))
+  (:method ((op (eql 'curry)) &rest args)
+    (destructuring-bind (function &rest args) args
+      `(curry ,(expand function) . ,(mapcar #'expand args))))
+  (:method ((op (eql 'rcurry)) &rest args)
+    (destructuring-bind (function &rest args) args
+      `(rcurry ,(expand function) . ,(mapcar #'expand args))))
+  (:method ((op (eql 'parser-call)) &rest args)
+    (destructuring-bind (function &rest args) args
+      `(parser-call ,(expand function) . ,(mapcar #'expand args)))))
+
+(defvar *expand*)
+
 (defgeneric expand/eval (object)
   (:method ((symbol symbol)) symbol)
   (:method ((integer integer)) integer)
-  (:method ((list list)) (apply #'expand-expr list)))
+  (:method ((list list))
+    (let ((*expand* #'expand/eval))
+      (apply #'expand-expr/eval list))))
 
 (defun parser-run (parser input)
   (catch 'parser-run
