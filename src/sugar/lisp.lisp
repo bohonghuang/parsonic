@@ -34,6 +34,12 @@
                      (1 (first body))
                      (t `(progn . ,body)))))))))
 
+(defmethod expand-expr ((op cons) &rest args)
+  (destructuring-ecase op
+    ((lambda lambda-list &rest body)
+     (declare (ignore lambda-list body))
+     (expand `(funcall ,op . ,args)))))
+
 (defmacro for (bindings &body body)
   (declare (ignore bindings body)))
 
