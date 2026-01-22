@@ -1,5 +1,34 @@
 (in-package #:parsonic)
 
+(defun lexical->unit-args (form &optional blocks)
+  (if (consp form)
+      (destructuring-case form
+        (((parser/funcall parser/apply) function &rest parsers)
+         `(,(car form) ,(walk-parsers-in-lambda (rcurry #'lexical->unit-args blocks) function)
+           . ,(mapcar (rcurry #'lexical->unit-args blocks) parsers)))
+        ((parser/unit signature body)
+         (declare (ignore signature))
+         (lexical->unit-args body (cons form blocks))
+         form)
+        ((parser/let name bindings body)
+         (declare (ignore name))
+         (loop :for binding :in bindings
+               :for (nil val) := (ensure-list binding)
+               :when (and val (symbolp val))
+                 :do (loop :for block :in blocks
+                           :for (type signature bindings) := block
+                           :if (eq type 'parser/unit)
+                             :collect signature :into signatures
+                           :else
+                             :if (eq type 'parser/let)
+                               :if (find val bindings :key (compose #'car #'ensure-list))
+                                 :return (loop :for signature :in signatures
+                                               :do (pushnew val (second signature) :key (compose #'car #'ensure-list)))))
+         (lexical->unit-args body (cons form blocks))
+         form)
+        ((t &rest args) (cons (car form) (mapcar (rcurry #'lexical->unit-args blocks) args))))
+      form))
+
 (defvar *parser-units*)
 (defvar *parser-unit-parent* nil)
 
@@ -47,7 +76,7 @@
 
 (defun extract/compile (form)
   (loop :with units := (let ((*parser-units* (make-hash-table :test #'equal)))
-                         (setf form (parser-unit-walk form))
+                         (setf form (parser-unit-walk (lexical->unit-args form)))
                          (hash-table-values *parser-units*))
         :and functions := nil
         :for (unit) := (setf units (loop :for unit :in (sort units #'> :key #'parser-unit-cost)
