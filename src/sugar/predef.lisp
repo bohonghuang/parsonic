@@ -10,3 +10,10 @@
 
 (defparser eof ()
   (progn (eql eof) (constantly nil)))
+
+(defparser peek (parser)
+  ((lambda ()
+     (let ((value #1='#:peek-fail))
+       (parser
+        (or ((lambda (result) (setf value result) (parser (or))) parser)
+            ((lambda () (if (eq value #1#) (parser (or)) (parser (constantly value)))))))))))

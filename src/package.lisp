@@ -11,6 +11,7 @@
    #:opt
    #:repsep
    #:rep
-   #:eof))
+   #:eof
+   #:peek))
 
 (in-package #:parsonic)
