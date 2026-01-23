@@ -44,8 +44,12 @@
              (list (cons '_ '(parser/constantly nil))))))
          (throw 'fail (list (cons '_ form)))))
     ((parser/unit signature body)
-     (loop :for (key . op) :in (extract-prefix body)
-           :collect (cons key `(parser/unit (,key . ,signature) ,op))))
+     (destructuring-bind (name lambda-list) signature
+       (loop :for (key . op) :in (extract-prefix body)
+             :if (eq key '_)
+               :collect (cons key `(parser/unit (,name ,lambda-list) ,op))
+             :else
+               :collect (cons key `(parser/unit ((,key ,name) ,lambda-list) ,op)))))
     ((parser/let name bindings body)
      (if name
          (throw 'fail (list (cons '_ form)))
@@ -59,7 +63,10 @@
      (list (cons '_ form)))
     ((parser/cut parser)
      (loop :for (key . op) :in (extract-prefix parser)
-           :collect (cons key `(parser/cut ,op))))))
+           :collect (cons key `(parser/cut ,op))))
+    ((parser/call name &rest args)
+     (declare (ignore name args))
+     (throw 'fail (list (cons '_ form))))))
 
 (defparameter *branches-trie-threshold* 4)
 
@@ -70,7 +77,9 @@
          (if (>= (length args) *branches-trie-threshold*)
              `(parser/case
                . ,(loop :for (key . parser) :in (extract-prefix form)
-                        :collect (list key (or->trie parser))))
+                        :collect (list key (if (equal parser form)
+                                               `(parser/or . ,(mapcar #'or->trie args))
+                                               (or->trie parser)))))
              (cons (car form) (mapcar #'or->trie args))))
         ((t &rest args) (cons (car form) (mapcar #'or->trie args))))
       form))
