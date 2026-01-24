@@ -7,66 +7,71 @@
                                  `(parser/or . ,ops)
                                  (first ops))))))
 
+(defun extract-prefix-fail-p (branches)
+  (and (= (length branches) 1) (eq (car (first branches)) '_)))
+
 (defun extract-prefix (form)
-  (destructuring-ecase form
-    ((parser/satisfies function)
-     (declare (ignore function))
-     (throw 'fail (list (cons '_ form))))
-    ((parser/eql object)
-     (list (cons object `(parser/constantly ,object))))
-    ((parser/or &rest branches)
-     (loop :with results := nil
-           :for branch :in branches
-           :do (loop :for (key . op) :in (block succ (catch 'fail (return-from succ (extract-prefix branch))) (list (cons '_ branch)))
-                     :do (nconcf (assoc-value results key) (list op)))
-           :finally
-              (loop :for result :in results
-                    :if (> (length (cdr result)) 1)
-                      :do (setf (cdr result) `(parser/or . ,(cdr result)))
-                    :else
-                      :do (setf (cdr result) (first (cdr result))))
-              (return results)))
-    ((parser/cons car cdr)
-     (extract-merge-branches
-      (loop :for (key . op-car) :in (extract-prefix car)
-            :if (and (eq key '_))
-              :nconc (loop :for (key . op-cdr) :in (extract-prefix cdr)
-                           :collect (cons key `(parser/cons ,op-car ,op-cdr)))
-            :else
-              :collect (cons key `(parser/cons ,op-car ,cdr)))))
-    ((parser/rep parser from to)
-     (if (integerp from)
-         (extract-merge-branches
-          (nconc
-           (loop :for (key . op) :in (extract-prefix parser)
-                 :collect (cons key `(parser/cons ,op (parser/rep ,parser ,(max (1- from) 0) (1- ,to)))))
-           (when (zerop from)
-             (list (cons '_ '(parser/constantly nil))))))
-         (throw 'fail (list (cons '_ form)))))
-    ((parser/unit signature body)
-     (destructuring-bind (name lambda-list) signature
-       (loop :for (key . op) :in (extract-prefix body)
-             :if (eq key '_)
-               :collect (cons key `(parser/unit (,name ,lambda-list) ,op))
-             :else
+  (macrolet ((ensure-success (results)
+               (once-only (results)
+                 `(if (extract-prefix-fail-p ,results)
+                      (return-from extract-prefix (list (cons '_ form)))
+                      ,results))))
+    (destructuring-ecase form
+      ((parser/satisfies function)
+       (declare (ignore function))
+       (list (cons '_ form)))
+      ((parser/eql object)
+       (list (cons object `(parser/constantly ,object))))
+      ((parser/or &rest branches)
+       (loop :with results := nil
+             :for branch :in branches
+             :do (loop :for (key . op) :in (extract-prefix branch)
+                       :do (nconcf (assoc-value results key) (list op)))
+             :finally
+                (loop :for result :in results
+                      :if (> (length (cdr result)) 1)
+                        :do (setf (cdr result) `(parser/or . ,(cdr result)))
+                      :else
+                        :do (setf (cdr result) (first (cdr result))))
+                (return results)))
+      ((parser/cons car cdr)
+       (extract-merge-branches
+        (loop :for (key . op-car) :in (ensure-success (extract-prefix car))
+              :if (eq key '_)
+                :nconc (loop :for (key . op-cdr) :in (extract-prefix cdr)
+                             :collect (cons key `(parser/cons ,op-car ,op-cdr)))
+              :else
+                :collect (cons key `(parser/cons ,op-car ,cdr)))))
+      ((parser/rep parser from to)
+       (if (integerp from)
+           (extract-merge-branches
+            (nconc
+             (loop :for (key . op) :in (ensure-success (extract-prefix parser))
+                   :collect (cons key `(parser/cons ,op (parser/rep ,parser ,(max (1- from) 0) (1- ,to)))))
+             (when (zerop from)
+               (list (cons '_ '(parser/constantly nil))))))
+           (list (cons '_ form))))
+      ((parser/unit signature body)
+       (destructuring-bind (name lambda-list) signature
+         (loop :for (key . op) :in (ensure-success (extract-prefix body))
                :collect (cons key `(parser/unit ((,key ,name) ,lambda-list) ,op)))))
-    ((parser/let name bindings body)
-     (if name
-         (throw 'fail (list (cons '_ form)))
-         (loop :for (key . op) :in (extract-prefix body)
-               :collect (cons key `(parser/let ,name ,bindings ,op)))))
-    ((parser/apply function parser)
-     (loop :for (key . op) :in (extract-prefix parser)
-           :collect (cons key `(parser/apply ,function ,op))))
-    ((parser/constantly object)
-     (declare (ignore object))
-     (list (cons '_ form)))
-    ((parser/cut parser)
-     (loop :for (key . op) :in (extract-prefix parser)
-           :collect (cons key `(parser/cut ,op))))
-    ((parser/call name &rest args)
-     (declare (ignore name args))
-     (throw 'fail (list (cons '_ form))))))
+      ((parser/let name bindings body)
+       (if name
+           (list (cons '_ form))
+           (loop :for (key . op) :in (extract-prefix body)
+                 :collect (cons key `(parser/let ,name ,bindings ,op)))))
+      ((parser/apply function parser)
+       (loop :for (key . op) :in (extract-prefix parser)
+             :collect (cons key `(parser/apply ,function ,op))))
+      ((parser/constantly object)
+       (declare (ignore object))
+       (list (cons '_ form)))
+      ((parser/cut parser)
+       (loop :for (key . op) :in (extract-prefix parser)
+             :collect (cons key `(parser/cut ,op))))
+      ((parser/call name &rest args)
+       (declare (ignore name args))
+       (list (cons '_ form))))))
 
 (defparameter *branches-trie-threshold* 4)
 
