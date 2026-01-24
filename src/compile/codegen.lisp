@@ -233,15 +233,21 @@
               (unless (>= ,counter ,from)
                 (return-from ,(car *codegen-blocks*) ,(codegen-parse-error)))))))
       ((parser/case &rest branches)
-       (with-gensyms (position)
-         `(let ((,position ,(input-position/compile *codegen-input*)))
-            (declare (ignorable ,position))
-            (case ,(input-read/compile *codegen-input*)
-              ,@(loop :for (key parser) :in branches
-                      :unless (eq key '_) :collect `((,key) ,(codegen parser)))
-              (t . ,(if-let ((default (car (assoc-value branches '_))))
-                      `(,(setf (input-position/compile *codegen-input*) position) ,(codegen default))
-                      `((return-from ,(car *codegen-blocks*) ,(codegen-parse-error position)))))))))
+       (with-gensyms (position block block-outer)
+         (flet ((body ()
+                  `(case ,(input-read/compile *codegen-input*)
+                     ,@(loop :for (key parser) :in branches
+                             :unless (eq key '_) :collect `((,key) ,(codegen parser)))
+                     (t (return-from ,(car *codegen-blocks*) ,(codegen-parse-error position))))))
+           `(let ((,position ,(input-position/compile *codegen-input*)))
+              ,(if-let ((default (car (assoc-value branches '_))))
+                 `(block ,block-outer
+                    (block ,block
+                      (return-from ,block-outer
+                        ,(let ((*codegen-blocks* (cons block *codegen-blocks*))) (body))))
+                    ,(setf (input-position/compile *codegen-input*) position)
+                    ,(codegen default))
+                 (body))))))
       ((parser/cut parser)
        (let ((*codegen-blocks* (cons (lastcar *codegen-blocks*) *codegen-blocks*)))
          (codegen parser))))))
