@@ -1,17 +1,7 @@
 (in-package #:parsonic)
 
-(progn
-  (defun parser-error-p (err)
-    (when (consp err)
-      (eq (car err) #1='#:error)))
-  (defun parser-error (&rest args)
-    (cons #1# args)))
-
-(defun parser-error-expected (err)
-  (getf (cdr err) :expected))
-
-(defun (setf parser-error-expected) (value err)
-  (setf (getf (cdr err) :expected) value))
+(defstruct parser-error
+  position expected)
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (setf (fdefinition 'parser-call) (fdefinition 'funcall)))
@@ -20,7 +10,7 @@
   (lambda (input &aux (position (input-position/eval input)) (result (input-read/eval input)))
     (if (funcall pred result)
         result
-        (parser-error :position position :expected pred))))
+        (make-parser-error :position position :expected pred))))
 
 (defun parser/cons (car cdr)
   (lambda (input)
@@ -42,7 +32,9 @@
           :else
             :return result
           :do (setf (input-position/eval input) position)
-          :finally (return (parser-error :position (input-position/eval input) :expected (cons 'or (mapcar #'cdr errors)))))))
+          :finally (return (make-parser-error
+                            :position (input-position/eval input)
+                            :expected (cons 'or (mapcar #'parser-error-expected errors)))))))
 
 (defun parser/or (&rest parsers)
   (parser/%or parsers))
@@ -102,14 +94,17 @@
 (defvar *expand*)
 
 (defgeneric expand/eval (object)
+  (:method (object) object)
   (:method ((symbol symbol)) symbol)
-  (:method ((integer integer)) integer)
   (:method ((list list))
     (let ((*expand* #'expand/eval))
       (apply #'expand-expr/eval list))))
 
 (defun parser-run (parser input)
-  (catch 'parser-run
-    (call-with-input/eval
-     (lambda (input) (parser-call parser input))
-     input)))
+  (let ((result (catch 'parser-run
+                  (call-with-input/eval
+                   (lambda (input) (parser-call parser input))
+                   input))))
+    (if (parser-error-p result)
+        (values (parser-error-position result) result)
+        result)))
