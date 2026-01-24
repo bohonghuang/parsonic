@@ -22,7 +22,7 @@
                                            (:file "optimize" :depends-on ("trie"))
                                            (:file "codegen" :depends-on ("input" "expand" "optimize"))
                                            (:file "pool")
-                                           (:file "extract")
+                                           (:file "extract" :depends-on ("codegen"))
                                            (:file "macro" :depends-on ("input" "expand" "codegen" "pool" "extract")))
                               :depends-on ("package" "expand" "eval"))
                              (:file "macro" :depends-on ("package" "expand" "compile"))

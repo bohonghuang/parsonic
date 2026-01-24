@@ -29,6 +29,44 @@
         ((t &rest args) (cons (car form) (mapcar (rcurry #'lexical->unit-args blocks) args))))
       form))
 
+(defvar *intermediate-unit-p*)
+
+(defun remove-intermediate-units (form)
+  (if (boundp '*intermediate-unit-p*)
+      (if (consp form)
+          (destructuring-case form
+            (((parser/cons parser/list parser/rep) &rest args)
+             (when args (setf *intermediate-unit-p* t))
+             (cons (car form) (mapcar #'remove-intermediate-units args)))
+            (((parser/funcall parser/apply) function &rest parsers)
+             (let ((*intermediate-unit-p* nil))
+               `(,(car form) ,(walk-parsers-in-lambda
+                               (lambda (form)
+                                 (let ((*intermediate-unit-p* nil))
+                                   (remove-intermediate-units form)))
+                               function)
+                 . ,(mapcar #'remove-intermediate-units parsers))))
+            ((parser/filter (lambda lambda-list &rest body) &rest parsers)
+             (assert (eq lambda 'lambda))
+             `(,(car form) (lambda ,lambda-list . ,body)
+               . ,(loop :with function := `(lambda ,(remove nil lambda-list) . ,body)
+                        :with variable-arg-index := (when (function-identity-p function) (position nil lambda-list :test-not #'eq))
+                        :for parser :in parsers
+                        :for index :from 0
+                        :if (eql index variable-arg-index)
+                          :collect (remove-intermediate-units parser)
+                        :else
+                          :collect (let ((*intermediate-unit-p* nil))
+                                     (remove-intermediate-units parser)))))
+            ((parser/unit signature body)
+             (let ((*intermediate-unit-p* nil))
+               (let ((body (remove-intermediate-units body)))
+                 (if *intermediate-unit-p* body `(parser/unit ,signature ,body)))))
+            ((t &rest args) (cons (car form) (mapcar #'remove-intermediate-units args))))
+          form)
+      (let ((*intermediate-unit-p* nil))
+        (remove-intermediate-units form))))
+
 (defvar *parser-units*)
 (defvar *parser-unit-parent* nil)
 
@@ -76,7 +114,7 @@
 
 (defun extract/compile (form)
   (loop :with units := (let ((*parser-units* (make-hash-table :test #'equal)))
-                         (setf form (parser-unit-walk (lexical->unit-args form)))
+                         (setf form (parser-unit-walk (lexical->unit-args (remove-intermediate-units form))))
                          (hash-table-values *parser-units*))
         :and functions := nil
         :for (unit) := (setf units (loop :for unit :in (sort units #'> :key #'parser-unit-cost)
