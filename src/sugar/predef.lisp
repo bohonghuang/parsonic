@@ -4,7 +4,7 @@
   (or parser (constantly nil)))
 
 (defparser repsep (rep sep &optional (from 0) (to most-positive-fixnum))
-  (or (cons rep (rep (progn sep rep) (max (1- from) 0) (1- to))) (rep (or) from)))
+  (or (cons rep (rep (progn sep rep) (max (1- from) 0) (1- to))) (rep (or) from to)))
 
 (defconstant eof +input-eof+)
 
