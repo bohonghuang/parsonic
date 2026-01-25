@@ -19,7 +19,10 @@
 
 (defgeneric expand-expr (op &rest args)
   (:method ((symbol symbol) &rest args)
-    `(,(or (parser-name-symbol symbol nil) (if (fboundp symbol) symbol (parser-name-symbol symbol)))
+    `(,(or (parser-name-symbol symbol nil)
+           (if (fboundp symbol)
+               (return-from expand-expr (cons symbol args))
+               (parser-name-symbol symbol)))
       . ,(mapcar #'expand args)))
   (:method ((op (eql 'quote)) &rest args)
     (destructuring-bind (object) args
