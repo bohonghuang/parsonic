@@ -209,6 +209,7 @@
                 (loop :named ,block
                       :initially ,(funcall *codegen-cons* list) (setf (cdr ,cons-root) nil)
                       :for ,cons := ,cons-root :then (cdr ,cons)
+                      :repeat ,to
                       :do (setf (cdr ,cons) ,(funcall
                                               *codegen-cons*
                                               (let ((*codegen-blocks* (cons block *codegen-blocks*)))
@@ -216,7 +217,6 @@
                                               nil)
                                 ,position ,(input-position/compile *codegen-input*)
                                 ,counter (1+ ,counter))
-                      :repeat ,to
                       :finally (return-from ,block-outer))
                 ,(setf (input-position/compile *codegen-input*) position))
               (setf ,list (cdr ,cons-root))
@@ -229,11 +229,11 @@
               (declare (type non-negative-fixnum ,counter))
               (block ,block-outer
                 (loop :named ,block
+                      :repeat ,to
                       :do ,(let ((*codegen-blocks* (cons block *codegen-blocks*)))
                              (codegen parser))
                           (setf ,position ,(input-position/compile *codegen-input*)
                                 ,counter (1+ ,counter))
-                      :repeat ,to
                       :finally (return-from ,block-outer))
                 ,(setf (input-position/compile *codegen-input*) position))
               (unless (>= ,counter ,from)
