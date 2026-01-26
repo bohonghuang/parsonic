@@ -29,13 +29,15 @@
             (body (let ((*codegen-blocks* (cons block *codegen-blocks*))) (funcall body))))
         `(let* ,@(if *merge-stack-list-allocation-p*
                      `(((,list (make-list ,(reduce #'+ *codegen-list-vars* :key (compose (curry #'max 0) #'cdr))))
-                        . ,(loop :for (var . size) :in *codegen-list-vars*
+                        . ,(loop :for (var . dimensions) :in *codegen-list-vars*
+                                 :for (size) := (ensure-list dimensions)
                                  :if (plusp size)
                                    :collect `(,var (shiftf ,list (cdr (nthcdr ,(1- size) ,list)) nil))
                                  :else
                                    :collect `(,var nil)))
                        (declare (dynamic-extent ,list)))
-                     `(,(loop :for (var . size) :in *codegen-list-vars*
+                     `(,(loop :for (var . dimensions) :in *codegen-list-vars*
+                              :for (size) := (ensure-list dimensions)
                               :if (plusp size)
                                 :collect `(,var (make-list ,size))
                               :else :if (minusp size)
@@ -43,17 +45,56 @@
                                                        :repeat (abs size) :finally (return form)))
                               :else
                                 :collect `(,var nil))
-                       (declare (dynamic-extent . ,(mapcar #'car (remove-if-not #'plusp *codegen-list-vars* :key #'cdr))))))
+                       (declare (dynamic-extent . ,(mapcar #'car (remove-if-not #'plusp *codegen-list-vars* :key (compose #'car #'ensure-list #'cdr)))))))
            (let* ((,errorp ',null)
                   (,result (block ,block-outer (setf ,errorp (block ,block (return-from ,block-outer ,body))))))
-             ,@(loop :for (var . size) :in *codegen-list-vars*
-                     :unless (plusp size) :collect (funcall *codegen-cons* (if (zerop size) var `(subseq ,var 0 ,(abs size)))))
+             ,@(loop :for (var . dimensions) :in *codegen-list-vars*
+                     :collect (labels ((recur (var dimensions &aux (size (car dimensions)))
+                                         (with-gensyms (cons elem rest)
+                                           (if (and size (not (plusp size)))
+                                               `(when ,var
+                                                  (loop :for ,cons :on ,var
+                                                        :for (,elem . ,rest) := ,cons
+                                                        :do ,(recur elem (cdr dimensions))
+                                                        :while ,rest
+                                                        ,@(unless (zerop size) `(:repeat ,(1- (abs size))))
+                                                        :finally (setf (cdr ,cons) ,(funcall *codegen-cons* var))))
+                                               '(progn)))))
+                                (recur var (ensure-list dimensions))))
              (unless (eq ,errorp ',null)
                (return-from ,(car *codegen-blocks*) ,(codegen-parse-error result)))
              ,result))))))
 
-(defmacro with-fresh-stack (form)
-  `(call-with-fresh-stack (lambda () ,form)))
+(defmacro with-fresh-stack (&body body)
+  `(call-with-fresh-stack (lambda () . ,body)))
+
+(defun call-with-nested-stack (body)
+  (with-gensyms (block block-outer result errorp)
+    (multiple-value-bind (body list-vars)
+        (let ((*codegen-list-vars* nil)
+              (*codegen-blocks* (cons block *codegen-blocks*)))
+          (values (funcall body) *codegen-list-vars*))
+      (if list-vars
+          (let ((null '#:null)
+                (lists (loop :for (var . dimensions) :in list-vars
+                             :collect (funcall *codegen-make-list* (cons 0 (loop :for size :in (ensure-list dimensions) :collect (- (abs size))))))))
+            `(let ,(loop :for (var . dimensions) :in list-vars
+                         :for (size) := (ensure-list dimensions)
+                         :collect `(,var ,(loop :for form := nil :then (funcall *codegen-cons* nil form)
+                                                :repeat (abs size)
+                                                :finally (return form))))
+               (let* ((,errorp ',null)
+                      (,result (block ,block-outer (setf ,errorp (block ,block (return-from ,block-outer ,body))))))
+                 ,@(loop :for (var . nil) :in list-vars
+                         :for list :in lists
+                         :collect `(setf ,list ,(funcall *codegen-cons* var list)))
+                 (unless (eq ,errorp ',null)
+                   (return-from ,(car *codegen-blocks*) ,(codegen-parse-error result)))
+                 ,result)))
+          `(block ,block-outer (return-from ,(car *codegen-blocks*) (block ,block (return-from ,block-outer ,body))))))))
+
+(defmacro with-nested-stack (&body body)
+  `(call-with-nested-stack (lambda () . ,body)))
 
 (defun codegen-expand (form)
   (optimize/compile (expand/compile form)))
@@ -210,13 +251,14 @@
               (declare (type non-negative-fixnum ,counter))
               (block ,block-outer
                 (loop :named ,block
-                      :initially ,(funcall *codegen-cons* list) (setf (cdr ,cons-root) nil)
+                      :initially (setf (cdr ,cons-root) nil)
                       :for ,cons := ,cons-root :then (cdr ,cons)
                       :repeat ,to
                       :do (setf (cdr ,cons) ,(funcall
                                               *codegen-cons*
-                                              (let ((*codegen-blocks* (cons block *codegen-blocks*)))
-                                                (codegen parser))
+                                              (with-nested-stack
+                                                (let ((*codegen-blocks* (cons block *codegen-blocks*)))
+                                                  (codegen parser)))
                                               nil)
                                 ,position ,(input-position/compile *codegen-input*)
                                 ,counter (1+ ,counter))
@@ -224,7 +266,6 @@
                 ,(setf (input-position/compile *codegen-input*) position))
               (setf ,list (cdr ,cons-root))
               (unless (>= ,counter ,from)
-                ,(funcall *codegen-cons* list)
                 (return-from ,(car *codegen-blocks*) ,(codegen-parse-error)))
               ,list)
            `(let ((,counter 0)
