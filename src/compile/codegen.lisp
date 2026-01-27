@@ -14,14 +14,18 @@
   (destructuring-case form
     ((lambda lambda-list &rest body) (equal lambda-list body))))
 
-(defun codegen-parse-error (&optional (value (input-position/compile *codegen-input*)))
-  `(values ,value t))
+(defconstant +codegen-parse-error+ 'parse-failure)
+
+(defun codegen-parse-error (&optional (info (input-position/compile *codegen-input*)))
+  `(values +codegen-parse-error+ ,info))
+
+(defun codegen-parse-error-p (result)
+  `(eq ,result +codegen-parse-error+))
 
 (defun call-with-fresh-stack (body)
-  (with-gensyms (list block block-outer result errorp)
+  (with-gensyms (list block result error-info)
     (let ((*codegen-list-vars* nil))
-      (let ((null '#:null)
-            (body (let ((*codegen-blocks* (cons block *codegen-blocks*))) (funcall body))))
+      (let ((body (let ((*codegen-blocks* (cons block *codegen-blocks*))) (funcall body))))
         `(let* ,@(if *merge-stack-list-allocation-p*
                      `(((,list (make-list ,(reduce #'+ *codegen-list-vars* :key (compose (curry #'max 0) #'cdr))))
                         . ,(loop :for (var . dimensions) :in *codegen-list-vars*
@@ -41,8 +45,7 @@
                               :else
                                 :collect `(,var nil))
                        (declare (dynamic-extent . ,(mapcar #'car (remove-if-not #'plusp *codegen-list-vars* :key (compose #'car #'ensure-list #'cdr)))))))
-           (let* ((,errorp ',null)
-                  (,result (block ,block-outer (setf ,errorp (block ,block (return-from ,block-outer ,body))))))
+           (multiple-value-bind (,result ,error-info) (block ,block ,body)
              ,@(loop :for (var . dimensions) :in *codegen-list-vars*
                      :collect (labels ((recur (var dimensions &aux (size (car dimensions)))
                                          (with-gensyms (cons elem rest)
@@ -56,35 +59,33 @@
                                                         :finally (setf (cdr ,cons) ,(funcall *codegen-cons* var))))
                                                '(progn)))))
                                 (recur var (ensure-list dimensions))))
-             (unless (eq ,errorp ',null)
-               (return-from ,(car *codegen-blocks*) ,(codegen-parse-error result)))
+             (when ,(codegen-parse-error-p result)
+               (return-from ,(car *codegen-blocks*) (values ,result ,error-info)))
              ,result))))))
 
 (defmacro with-fresh-stack (&body body)
   `(call-with-fresh-stack (lambda () . ,body)))
 
 (defun call-with-nested-stack (body)
-  (with-gensyms (block block-outer result errorp)
+  (with-gensyms (block block-outer result error-info)
     (multiple-value-bind (body list-vars)
         (let ((*codegen-list-vars* nil)
               (*codegen-blocks* (cons block *codegen-blocks*)))
           (values (funcall body) *codegen-list-vars*))
       (if list-vars
-          (let ((null '#:null)
-                (lists (loop :for (var . dimensions) :in list-vars
+          (let ((lists (loop :for (var . dimensions) :in list-vars
                              :collect (funcall *codegen-make-list* (cons 0 (loop :for size :in (ensure-list dimensions) :collect (- (abs size))))))))
             `(let ,(loop :for (var . dimensions) :in list-vars
                          :for (size) := (ensure-list dimensions)
                          :collect `(,var ,(loop :for form := nil :then (funcall *codegen-cons* nil form)
                                                 :repeat (abs size)
                                                 :finally (return form))))
-               (let* ((,errorp ',null)
-                      (,result (block ,block-outer (setf ,errorp (block ,block (return-from ,block-outer ,body))))))
+               (multiple-value-bind (,result ,error-info) (block ,block ,body)
                  ,@(loop :for (var . nil) :in list-vars
                          :for list :in lists
                          :collect `(setf ,list ,(funcall *codegen-cons* var list)))
-                 (unless (eq ,errorp ',null)
-                   (return-from ,(car *codegen-blocks*) ,(codegen-parse-error result)))
+                 (when ,(codegen-parse-error-p result)
+                   (return-from ,(car *codegen-blocks*) (values ,result ,error-info)))
                  ,result)))
           `(block ,block-outer (return-from ,(car *codegen-blocks*) (block ,block (return-from ,block-outer ,body))))))))
 
@@ -229,10 +230,10 @@
                       (codegen `(parser/call ,name . ,args)))
              `((lambda ,lambda-list ,(codegen body)) . ,args))))
       ((parser/call name &rest args)
-       (with-gensyms (result errorp)
-         `(multiple-value-bind (,result ,errorp) (,name . ,args)
-            (if ,errorp
-                (return-from ,(car *codegen-blocks*) ,(codegen-parse-error))
+       (with-gensyms (result error-info)
+         `(multiple-value-bind (,result ,error-info) (,name . ,args)
+            (if ,(codegen-parse-error-p result)
+                (return-from ,(car *codegen-blocks*) (values ,result ,error-info))
                 ,result))))
       ((parser/constantly object) object)
       ((parser/rep parser from to)

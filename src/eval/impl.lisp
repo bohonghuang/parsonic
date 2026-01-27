@@ -1,6 +1,6 @@
 (in-package #:parsonic)
 
-(defstruct parser-error
+(defstruct parse-failure
   position expected)
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
@@ -10,15 +10,15 @@
   (lambda (input &aux (position (input-position/eval input)) (result (input-read/eval input)))
     (if (funcall pred result)
         result
-        (make-parser-error :position position :expected pred))))
+        (make-parse-failure :position position :expected pred))))
 
 (defun parser/cons (car cdr)
   (lambda (input)
     (let ((car (parser-call car input)))
-      (if (parser-error-p car)
+      (if (parse-failure-p car)
           car
           (let ((cdr (parser-call cdr input)))
-            (if (parser-error-p cdr)
+            (if (parse-failure-p cdr)
                 cdr
                 (cons car cdr)))))))
 
@@ -27,14 +27,14 @@
     (loop :with position := (input-position/eval input)
           :for parser :in parsers
           :for result := (parser-call parser input)
-          :if (parser-error-p result)
+          :if (parse-failure-p result)
             :collect result :into errors
           :else
             :return result
           :do (setf (input-position/eval input) position)
-          :finally (return (make-parser-error
+          :finally (return (make-parse-failure
                             :position (input-position/eval input)
-                            :expected (cons 'or (mapcar #'parser-error-expected errors)))))))
+                            :expected (cons 'or (mapcar #'parse-failure-expected errors)))))))
 
 (defun parser/or (&rest parsers)
   (parser/%or parsers))
@@ -47,7 +47,7 @@
     (loop :for i :below to
           :for position := (input-position/eval input)
           :for result := (parser-call parser input)
-          :if (parser-error-p result)
+          :if (parse-failure-p result)
             :do (setf (input-position/eval input) position)
             :and
             :if (>= i from)
@@ -63,13 +63,13 @@
 
 (defun parser/apply (function parser)
   (lambda (input &aux (result (parser-call parser input)))
-    (if (parser-error-p result)
+    (if (parse-failure-p result)
         result
         (parser-call (apply function result) input))))
 
 (defun parser/cut (parser)
   (lambda (input &aux (result (parser-call parser input)))
-    (if (parser-error-p result)
+    (if (parse-failure-p result)
         (throw 'parser-run result)
         result)))
 
@@ -105,6 +105,6 @@
                   (call-with-input/eval
                    (lambda (input) (parser-call parser input))
                    input))))
-    (if (parser-error-p result)
-        (values (parser-error-position result) result)
+    (if (parse-failure-p result)
+        (values result (parse-failure-position result))
         result)))
