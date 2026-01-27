@@ -20,10 +20,11 @@
                                            (:file "expand")
                                            (:file "trie")
                                            (:file "optimize" :depends-on ("trie"))
-                                           (:file "codegen" :depends-on ("input" "expand" "optimize"))
+                                           (:file "stack")
+                                           (:file "codegen" :depends-on ("input" "expand" "optimize" "stack"))
                                            (:file "pool" :depends-on ("codegen"))
                                            (:file "extract" :depends-on ("codegen"))
-                                           (:file "macro" :depends-on ("input" "expand" "codegen" "pool" "extract")))
+                                           (:file "macro" :depends-on ("input" "expand" "stack" "codegen" "pool" "extract")))
                               :depends-on ("package" "expand" "eval"))
                              (:file "macro" :depends-on ("package" "expand" "compile"))
                              (:module "sugar"
