@@ -281,10 +281,10 @@
          (flet ((body ()
                   `(case ,(input-read/compile *codegen-input*)
                      ,@(loop :for (key parser) :in branches
-                             :unless (eq key '_) :collect `((,key) ,(codegen parser)))
+                             :unless (eq key t) :collect `(,key ,(codegen parser)))
                      (t (return-from ,(car *codegen-blocks*) ,(codegen-parse-error position))))))
            `(let ((,position ,(input-position/compile *codegen-input*)))
-              ,(if-let ((default (car (assoc-value branches '_))))
+              ,(if-let ((default (car (assoc-value branches t))))
                  `(block ,block-outer
                     (block ,block
                       (return-from ,block-outer
