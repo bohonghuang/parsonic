@@ -57,7 +57,7 @@
                                                         :while ,rest
                                                         ,@(unless (zerop size) `(:repeat ,(1- (abs size))))
                                                         :finally (setf (cdr ,cons) ,(funcall *codegen-cons* var))))
-                                               '(progn)))))
+                                               `(progn ,var)))))
                                 (recur var (ensure-list dimensions))))
              (when ,(codegen-parse-error-p result)
                (return-from ,(car *codegen-blocks*) (values ,result ,error-info)))
@@ -73,7 +73,7 @@
               (*codegen-blocks* (cons block *codegen-blocks*)))
           (values (funcall body) *codegen-list-vars*))
       (if list-vars
-          (let ((lists (loop :for (var . dimensions) :in list-vars
+          (let ((lists (loop :for (nil . dimensions) :in list-vars
                              :collect (funcall *codegen-make-list* (cons 0 (loop :for size :in (ensure-list dimensions) :collect (- (abs size))))))))
             `(let ,(loop :for (var . dimensions) :in list-vars
                          :for (size) := (ensure-list dimensions)
