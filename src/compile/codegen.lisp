@@ -7,7 +7,6 @@
 (defvar *codegen-make-list*)
 (defvar *codegen-labels*)
 
-(defparameter *merge-stack-list-allocation-p* nil)
 (defparameter *pseudo-parser-object-p* t)
 
 (defun function-identity-p (form)
@@ -23,54 +22,46 @@
   `(eq ,result +codegen-parse-error+))
 
 (defun call-with-fresh-stack (body)
-  (with-gensyms (list block result error-info)
+  (with-gensyms (result error-info)
     (let ((*codegen-list-vars* nil))
-      (let ((body (let ((*codegen-blocks* (cons block *codegen-blocks*))) (funcall body))))
-        `(let* ,@(if *merge-stack-list-allocation-p*
-                     `(((,list (make-list ,(reduce #'+ *codegen-list-vars* :key (compose (curry #'max 0) #'cdr))))
-                        . ,(loop :for (var . dimensions) :in *codegen-list-vars*
-                                 :for (size) := (ensure-list dimensions)
-                                 :if (plusp size)
-                                   :collect `(,var (shiftf ,list (cdr (nthcdr ,(1- size) ,list)) nil))
-                                 :else
-                                   :collect `(,var nil)))
-                       (declare (dynamic-extent ,list)))
-                     `(,(loop :for (var . dimensions) :in *codegen-list-vars*
-                              :for (size) := (ensure-list dimensions)
-                              :if (plusp size)
-                                :collect `(,var (make-list ,size))
-                              :else :if (minusp size)
-                                :collect `(,var ,(loop :for form := nil :then (funcall *codegen-cons* nil form)
-                                                       :repeat (abs size) :finally (return form)))
-                              :else
-                                :collect `(,var nil))
-                       (declare (dynamic-extent . ,(mapcar #'car (remove-if-not #'plusp *codegen-list-vars* :key (compose #'car #'ensure-list #'cdr)))))))
-           (multiple-value-bind (,result ,error-info) (block ,block ,body)
-             ,@(loop :for (var . dimensions) :in *codegen-list-vars*
-                     :collect (labels ((recur (var dimensions &aux (size (car dimensions)))
-                                         (with-gensyms (cons elem rest)
-                                           (if (and size (not (plusp size)))
-                                               `(when ,var
-                                                  (loop :for ,cons :on ,var
-                                                        :for (,elem . ,rest) := ,cons
-                                                        :do ,(recur elem (cdr dimensions))
-                                                        :while ,rest
-                                                        ,@(unless (zerop size) `(:repeat ,(1- (abs size))))
-                                                        :finally (setf (cdr ,cons) ,(funcall *codegen-cons* var))))
-                                               `(progn ,var)))))
-                                (recur var (ensure-list dimensions))))
-             (when ,(codegen-parse-error-p result)
-               (return-from ,(car *codegen-blocks*) (values ,result ,error-info)))
-             ,result))))))
+      (let ((body (funcall body)))
+        (if *codegen-list-vars*
+            `(let ,(loop :for (var . dimensions) :in *codegen-list-vars*
+                         :for (size) := (ensure-list dimensions)
+                         :if (plusp size)
+                           :collect `(,var (make-list ,size))
+                         :else :if (minusp size)
+                           :collect `(,var ,(loop :for form := nil :then (funcall *codegen-cons* nil form)
+                                                  :repeat (abs size) :finally (return form)))
+                         :else
+                           :collect `(,var nil))
+               (declare (dynamic-extent . ,(mapcar #'car (remove-if-not #'plusp *codegen-list-vars* :key (compose #'car #'ensure-list #'cdr)))))
+               (multiple-value-bind (,result ,error-info) (block ,(car *codegen-blocks*) ,body)
+                 ,@(loop :for (var . dimensions) :in *codegen-list-vars*
+                         :collect (labels ((recur (var dimensions &aux (size (car dimensions)))
+                                             (with-gensyms (cons elem rest)
+                                               (if (and size (not (plusp size)))
+                                                   `(when ,var
+                                                      (loop :for ,cons :on ,var
+                                                            :for (,elem . ,rest) := ,cons
+                                                            :do ,(recur elem (cdr dimensions))
+                                                            :while ,rest
+                                                            ,@(unless (zerop size) `(:repeat ,(1- (abs size))))
+                                                            :finally (setf (cdr ,cons) ,(funcall *codegen-cons* var))))
+                                                   `(progn ,var)))))
+                                    (recur var (ensure-list dimensions))))
+                 (when ,(codegen-parse-error-p result)
+                   (return-from ,(car *codegen-blocks*) (values ,result ,error-info)))
+                 ,result))
+            body)))))
 
 (defmacro with-fresh-stack (&body body)
   `(call-with-fresh-stack (lambda () . ,body)))
 
 (defun call-with-nested-stack (body)
-  (with-gensyms (block block-outer result error-info)
+  (with-gensyms (result error-info)
     (multiple-value-bind (body list-vars)
-        (let ((*codegen-list-vars* nil)
-              (*codegen-blocks* (cons block *codegen-blocks*)))
+        (let ((*codegen-list-vars* nil))
           (values (funcall body) *codegen-list-vars*))
       (if list-vars
           (let ((lists (loop :for (nil . dimensions) :in list-vars
@@ -80,14 +71,14 @@
                          :collect `(,var ,(loop :for form := nil :then (funcall *codegen-cons* nil form)
                                                 :repeat (abs size)
                                                 :finally (return form))))
-               (multiple-value-bind (,result ,error-info) (block ,block ,body)
+               (multiple-value-bind (,result ,error-info) (block ,(car *codegen-blocks*) ,body)
                  ,@(loop :for (var . nil) :in list-vars
                          :for list :in lists
                          :collect `(setf ,list ,(funcall *codegen-cons* var list)))
                  (when ,(codegen-parse-error-p result)
                    (return-from ,(car *codegen-blocks*) (values ,result ,error-info)))
                  ,result)))
-          `(block ,block-outer (return-from ,(car *codegen-blocks*) (block ,block (return-from ,block-outer ,body))))))))
+          body))))
 
 (defmacro with-nested-stack (&body body)
   `(call-with-nested-stack (lambda () . ,body)))
