@@ -4,7 +4,14 @@
 (defvar *codegen-blocks*)
 (defvar *codegen-list-vars*)
 
-(defparameter *emulate-stack-allocation-p* '(#-(or sbcl ccl) t))
+(defparameter *emulate-stack-allocation-p* (progn #-(or sbcl ccl) 'lazy))
+
+(defun codegen-make-conses (size)
+  (ecase *emulate-stack-allocation-p*
+    ((t) (loop :for form := nil :then (funcall *codegen-cons* nil form)
+               :repeat size
+               :finally (return form)))
+    ((lazy))))
 
 (defun codegen-make-list (&optional (dimensions nil dimensionsp))
   (if dimensionsp
@@ -13,7 +20,11 @@
                (dimensions (if *emulate-stack-allocation-p*
                                (loop :for size :in dimensions :collect (- (abs size)))
                                dimensions)))
-          (push (cons list dimensions) *codegen-list-vars*))
+          (push (cons list dimensions) *codegen-list-vars*)
+          (when (eq *emulate-stack-allocation-p* 'lazy)
+            (let ((*emulate-stack-allocation-p* t))
+              (unless (zerop (first dimensions))
+                (setf list `(setf ,list ,(codegen-make-conses (- (first dimensions)))))))))
         list)
       #'codegen-make-list))
 
@@ -28,8 +39,7 @@
                          :if (plusp size)
                            :collect `(,var (make-list ,size))
                          :else :if (minusp size)
-                           :collect `(,var ,(loop :for form := nil :then (funcall *codegen-cons* nil form)
-                                                  :repeat (- size) :finally (return form)))
+                           :collect `(,var ,(codegen-make-conses (- size)))
                          :else
                            :collect `(,var nil))
                (declare (dynamic-extent . ,(loop :for (var . (size)) :in *codegen-list-vars* :when (plusp size) :collect var)))
@@ -56,26 +66,24 @@
   `(call-with-fresh-stack (lambda () . ,body)))
 
 (defun call-with-nested-stack (body)
-  (with-gensyms (result error-info)
-    (multiple-value-bind (body list-vars)
-        (let ((*codegen-list-vars* nil)
-              (*emulate-stack-allocation-p* t))
-          (values (funcall body) *codegen-list-vars*))
-      (if list-vars
-          (let ((lists (loop :for (var . dimensions) :in list-vars
-                             :collect (cons var (funcall *codegen-make-list* (cons 0 dimensions))))))
-            `(let ,(loop :for (var . (size)) :in list-vars
-                         :do (check-type size non-positive-fixnum)
-                         :collect `(,var ,(loop :for form := nil :then (funcall *codegen-cons* nil form)
-                                                :repeat (- size)
-                                                :finally (return form))))
-               (multiple-value-bind (,result ,error-info) (block ,(car *codegen-blocks*) ,body)
-                 ,@(loop :for (var . list) :in lists
-                         :collect `(setf ,list ,(funcall *codegen-cons* var list)))
-                 (when ,(codegen-parse-error-p result)
-                   (return-from ,(car *codegen-blocks*) (values ,result ,error-info)))
-                 ,result)))
-          body))))
+  (let ((*emulate-stack-allocation-p* 'lazy))
+    (with-gensyms (result error-info)
+      (multiple-value-bind (body list-vars)
+          (let ((*codegen-list-vars* nil))
+            (values (funcall body) *codegen-list-vars*))
+        (if list-vars
+            (let ((lists (loop :for (var . dimensions) :in list-vars
+                               :collect (cons var (funcall *codegen-make-list* (cons 0 dimensions))))))
+              `(let ,(loop :for (var . (size)) :in list-vars
+                           :do (check-type size non-positive-fixnum)
+                           :collect `(,var ,(codegen-make-conses (- size))))
+                 (multiple-value-bind (,result ,error-info) (block ,(car *codegen-blocks*) ,body)
+                   ,@(loop :for (var . list) :in lists
+                           :collect `(setf ,list ,(funcall *codegen-cons* var list)))
+                   (when ,(codegen-parse-error-p result)
+                     (return-from ,(car *codegen-blocks*) (values ,result ,error-info)))
+                   ,result)))
+            body)))))
 
 (defmacro with-nested-stack (&body body)
   `(call-with-nested-stack (lambda () . ,body)))
