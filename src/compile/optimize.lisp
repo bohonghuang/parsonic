@@ -3,9 +3,27 @@
 (defun let->body (form &optional env-bindings)
   (if (consp form)
       (destructuring-case form
-        (((parser/funcall parser/apply) function &rest parsers)
-         `(,(car form) ,(walk-parsers-in-lambda (rcurry #'let->body env-bindings) function)
-           . ,(mapcar (rcurry #'let->body env-bindings) parsers)))
+        (((parser/funcall parser/apply) (lambda lambda-list &rest body) &rest parsers)
+         (assert (eq lambda 'lambda))
+         (let* ((args (loop :for binding :in lambda-list
+                            :for arg := (list nil '#:unbound nil)
+                            :unless (member binding lambda-list-keywords)
+                              :collect (replace arg (ensure-list binding))))
+                (bindings (nconc args env-bindings)))
+           `(,(car form) ,(walk-parsers-in-lambda (rcurry #'let->body bindings) `(lambda ,lambda-list . ,body))
+             . ,(mapcar (rcurry #'let->body bindings) parsers))))
+        ((parser/unit (name lambda-list) body)
+         (let* ((bindings (loop :for (var val) :in env-bindings
+                                :collect (list var val nil)))
+                (body (let->body body bindings)))
+           (loop :for (var val used) :in bindings
+                 :for env-binding :in env-bindings
+                 :for (env-var env-val) := env-binding
+                 :do (assert (eq var env-var)) (assert (eq val env-val))
+                 :when used
+                   :do (setf (third env-binding) t)
+                       (pushnew var lambda-list :key (compose #'car #'ensure-list)))
+           `(parser/unit (,name ,lambda-list) ,body)))
         ((parser/let name bindings body)
          (let* ((args (loop :for binding :in bindings
                             :for arg := (list nil '#:unbound nil)
@@ -16,11 +34,18 @@
                                       :for (var val) := arg
                                       :unless (eq var val)
                                         :unless (loop :with unused := t
-                                                      :for binding :in env-bindings
+                                                      :for (binding . rest) :on env-bindings
                                                       :for (env-var env-val) := binding
-                                                      :if (eq env-var val)
-                                                        :if (and (eq env-val var) unused) :return t
-                                                        :else :do (setf (third binding) t) :and :return nil
+                                                      :when (eq env-var val)
+                                                        :if (and (eq env-val var) unused)
+                                                          :do (loop :for binding :in rest
+                                                                    :for (env-var nil) := binding
+                                                                    :when (eq env-var var)
+                                                                      :return (setf (third binding) t))
+                                                          :and :return binding
+                                                        :else
+                                                          :do (setf (third binding) t)
+                                                          :and :return nil
                                                       :when (and (eq var env-var) (not (eq val env-val)))
                                                         :do (setf unused nil))
                                           :collect arg)))
