@@ -37,12 +37,15 @@
     (let (arg)
       (setf (get lexical 'lexical-store) t
             arg (make-parser-arg
-                 :parser (let ((parent-env *expand/compile-env*))
+                 :parser (let ((parent-env *expand/compile-env*)
+                               (cache (make-hash-table :test #'eq)))
                            (lambda (&optional (function #'expand/compile))
                              (pushnew name (cdr parser-arg-names))
                              (setf (second (parser-arg-binding arg)) (first (parser-arg-binding arg)))
-                             (let ((*expand/compile-env* parent-env))
-                               (funcall function value))))
+                             (ensure-gethash
+                              function cache
+                              (let ((*expand/compile-env* parent-env))
+                                (funcall function value)))))
                  :binding (list name lexical))))))
 
 (defstruct (curry-arg (:include lexical-arg)))
