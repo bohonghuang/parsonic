@@ -1,7 +1,5 @@
 (in-package #:parsonic)
 
-(defparameter *flatten-local-functions-p* nil)
-
 (defmacro parser-lambda ((input-var) &body body)
   (multiple-value-bind (declarations body) (body-declarations body)
     (let ((types (mapcar #'cdr (remove 'type declarations :key #'car :test-not #'eq))))
@@ -17,25 +15,18 @@
                (lambda ()
                  (call-with-input/compile
                   (lambda (input)
-                    (let ((*codegen-input* input)
-                          (*codegen-blocks* (list block))
-                          (*codegen-labels* (let ((local-functions nil))
-                                              (lambda (functions-or-body &optional (body nil bodyp))
-                                                (if *flatten-local-functions-p*
-                                                    (if bodyp
-                                                        (progn (nconcf local-functions functions-or-body) body)
-                                                        `(labels ,local-functions ,functions-or-body))
-                                                    (if bodyp
-                                                        `(labels ,functions-or-body ,body)
-                                                        functions-or-body))))))
-                      (multiple-value-bind (form functions) (extract/compile (codegen-expand `(progn . ,body)))
-                        (let ((body `(block ,block ,(funcall *codegen-labels* (with-fresh-stack (codegen form))))))
-                          (funcall
-                           *codegen-labels*
-                           (let ((*flatten-local-functions-p* nil))
-                             (funcall
-                              *codegen-labels*
-                              (loop :for (name lambda-list parser) :in functions
-                                    :collect (list name lambda-list (let ((*codegen-blocks* (list name))) (with-fresh-stack (codegen parser)))))
-                              body)))))))
+                    (let ((local-functions nil))
+                      (let ((*codegen-input* input)
+                            (*codegen-blocks* (list block))
+                            (*codegen-labels* (lambda (functions-or-body body) (nconcf local-functions functions-or-body) body)))
+                        (multiple-value-bind (form functions) (extract/compile (codegen-expand `(progn . ,body)))
+                          (let ((body (with-fresh-stack (codegen form))))
+                            `(block ,block
+                               (labels ,(append
+                                         (loop :for (name lambda-list parser) :in functions
+                                               :collect (list name lambda-list
+                                                              (let ((*codegen-blocks* (cons name *codegen-blocks*)))
+                                                                (with-fresh-stack (codegen parser)))))
+                                         local-functions)
+                                 ,body)))))))
                   input)))))))))
