@@ -135,7 +135,7 @@
         :while unit
         :do (destructuring-bind (parser/unit (name lambda-list) parser) (parser-unit-tree unit)
               (assert (eq parser/unit 'parser/unit))
-              (let ((name (gensym (princ-to-string name)))
+              (let ((name (gensym (format nil "~{~A~}" (mapcar (compose #'car #'ensure-list) name))))
                     (args (lambda-list-arguments lambda-list)))
                 (push (list name args parser) functions)
                 (let ((count (if *parser-unit-extract-recursive-p* (1- (parser-unit-count unit)) (parser-unit-count unit))))
