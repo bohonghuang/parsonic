@@ -208,10 +208,6 @@
           (let ((fname (etypecase (cdr fdef)
                          (boolean (setf (cdr fdef) (gensym (string name))))
                          (symbol (cdr fdef)))))
-            (loop :for caller-fdef :in *expand/compile-known*
-                  :until (eq fdef caller-fdef)
-                  :unless (cdr caller-fdef)
-                    :do (setf (cdr caller-fdef) t))
             `(parser/call ,fname . ,(mapcar #'cdr (remove-if (rcurry #'member (cdar fdef) :key #'car) args :key #'car))))
           (let* ((parser-arg-names (mapcar #'car (remove-if-not #'cdr arg-info)))
                  (parsers (loop :for (name . value) :in lambda-list-args
