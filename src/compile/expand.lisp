@@ -275,7 +275,7 @@
      (rcurry #'gethash (form-symbol-set (cons function parser))))))
 
 (defmethod expand-expr/compile ((op (eql 'parser-call)) &rest args)
-  (destructuring-bind (function &rest args) args
+  (destructuring-bind (function &rest args &aux (env *expand/compile-env*)) args
     (labels ((recur (object largs rargs)
                (etypecase object
                  (lexical-arg
@@ -293,7 +293,7 @@
                                                   (loop :for arg :in (append largs rargs)
                                                         :when (curry-arg-p arg)
                                                           :collect arg)
-                                                  *expand/compile-env*))
+                                                  env))
                            (args (loop :for arg :in (append largs rargs)
                                        :if (curry-arg-p arg)
                                          :collect (lexical-arg-name arg)
