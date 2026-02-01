@@ -6,7 +6,7 @@
 
 (defvar *expand/compile-env* nil)
 (defvar *expand/compile-known* nil)
-(defvar *expand/compile-args* nil)
+(defvar *expand/compile-cache* nil)
 
 (defstruct lexical-arg
   (parser #'values :type function)
@@ -184,14 +184,15 @@
                (expand body)
                (loop :for (name . nil) :in lambda-list-args
                      :collect (cons name (when (member name parser-arg-names) t))))))
-      (if (find :collect *expand/compile-known* :key #'cdr)
-          (throw 'collect-parser-args
-            (loop :for (name . parser-p) :in (collect-parser-args)
-                  :when parser-p
-                    :do (expand (assoc-value lambda-list-args name))))
-          (values (ensure-gethash name *expand/compile-args* (collect-parser-args)) lexical-args)))))
+      (let ((arg-info (ensure-gethash name *expand/compile-cache* (collect-parser-args))))
+        (if (find :collect *expand/compile-known* :key #'cdr)
+            (throw 'collect-parser-args
+              (loop :for (name . parser-p) :in arg-info
+                    :when parser-p
+                      :do (expand (assoc-value lambda-list-args name))))
+            (values arg-info lexical-args))))))
 
-(defun %expand-expr/compile (name lambda-list args body &aux (*expand/compile-args* (or *expand/compile-args* (make-hash-table :test #'eq))))
+(defun %expand-expr/compile (name lambda-list args body &aux (*expand/compile-cache* (or *expand/compile-cache* (make-hash-table :test #'equal))))
   (filter-lexical-env
    (receive-lexical-env
     (let ((lambda-list-args (loop :for (name default-value) :in (mapcar #'ensure-list lambda-list)
@@ -222,24 +223,24 @@
                  (variables (loop :for (name . value) :in args
                                   :unless (member name parser-arg-names)
                                     :collect (list name value)))
-                 (known (cons (cons (cons name parsers) nil) *expand/compile-known*))
-                 (result (let ((*expand/compile-env* lexical-args)
-                               (*expand/compile-known* known))
-                           (expand body)))
-                 (signature (when (every #'cdr parsers) (list (cons name (mapcar #'cdr parsers)) lambda-list)))
+                 (signature (list (cons name (mapcar #'cdr parsers)) lambda-list))
                  (lambda-list (if (intersection lambda-list lambda-list-keywords)
                                   (append lambda-list '(&initial) variables)
                                   (progn
                                     (assert (equal lambda-list (mapcar #'first variables)))
-                                    variables)))
-                 (result (send-lexical-env result lexical-args))
-                 (fname (cdr (first known)))
-                 (result (if (or fname (null signature)) result `(parser/unit ,signature ,result)))
-                 (result (etypecase fname
-                           (boolean (if lambda-list `(parser/let nil ,lambda-list ,result) result))
-                           (symbol `(parser/let ,fname ,lambda-list ,result)))))
-            (assert result)
-            result)))))
+                                    variables))))
+            (let* ((known (cons (cons (cons name parsers) nil) *expand/compile-known*))
+                   (result (let ((*expand/compile-env* lexical-args)
+                                 (*expand/compile-known* known))
+                             (expand body)))
+                   (result (send-lexical-env result lexical-args))
+                   (fname (cdr (first known)))
+                   (result (if fname result `(parser/unit ,signature ,result)))
+                   (result (etypecase fname
+                             (boolean (if lambda-list `(parser/let nil ,lambda-list ,result) result))
+                             (symbol `(parser/let ,fname ,lambda-list ,result)))))
+              (assert result)
+              result))))))
    (rcurry #'gethash (form-symbol-set (mapcar #'cdr args)))))
 
 (defun walk-parsers-in-lambda (function form)
