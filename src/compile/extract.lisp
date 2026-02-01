@@ -77,18 +77,25 @@
   (tree nil :type list)
   (tree-cost 0 :type non-negative-fixnum))
 
-(defun parser-tree-cost (tree)
+(defun parser-unit-calculate-tree-cost (unit &optional (tree (parser-unit-tree unit)))
   (typecase tree
     ((cons symbol list)
-     (+ (if (eql (search (string '#:parser/) (symbol-name (car tree))) 0) 1 0)
-        (parser-tree-cost (car tree)) (parser-tree-cost (cdr tree))))
-    (cons (+ (parser-tree-cost (car tree)) (parser-tree-cost (cdr tree))))
+     (destructuring-case tree
+       ((parser/unit signature body)
+        (1+ (if (eq (parser-unit-tree unit) tree)
+                (parser-unit-calculate-tree-cost unit body)
+                (parser-unit-cost (find signature (parser-unit-children unit) :key (compose #'second #'parser-unit-tree) :test #'equal)))))
+       ((t &rest args)
+        (declare (ignore args))
+        (+ (if (eql (search (string '#:parser/) (symbol-name (car tree))) 0) 1 0)
+           (parser-unit-calculate-tree-cost unit (car tree)) (parser-unit-calculate-tree-cost unit (cdr tree))))))
+    (cons (+ (parser-unit-calculate-tree-cost unit (car tree)) (parser-unit-calculate-tree-cost unit (cdr tree))))
     (t 0)))
 
 (defun parser-unit-cost (unit)
   (if (plusp (parser-unit-tree-cost unit))
       (parser-unit-tree-cost unit)
-      (setf (parser-unit-tree-cost unit) (parser-tree-cost (parser-unit-tree unit)))))
+      (setf (parser-unit-tree-cost unit) (parser-unit-calculate-tree-cost unit))))
 
 (defun (setf parser-unit-cost) (value unit)
   (assert (plusp value))
