@@ -73,19 +73,22 @@
 (defstruct parser-unit
   (parents nil :type list)
   (children nil :type list)
+  (count 0 :type non-negative-fixnum)
   (tree nil :type list)
-  (count 0 :type non-negative-fixnum))
+  (tree-cost 0 :type non-negative-fixnum))
 
 (defun parser-tree-cost (tree)
   (typecase tree
-    ((cons symbol cons)
+    ((cons symbol list)
      (+ (if (eql (search (string '#:parser/) (symbol-name (car tree))) 0) 1 0)
         (parser-tree-cost (car tree)) (parser-tree-cost (cdr tree))))
     (cons (+ (parser-tree-cost (car tree)) (parser-tree-cost (cdr tree))))
     (t 0)))
 
 (defun parser-unit-cost (unit)
-  (parser-tree-cost (parser-unit-tree unit)))
+  (if (plusp (parser-unit-tree-cost unit))
+      (parser-unit-tree-cost unit)
+      (setf (parser-unit-tree-cost unit) (parser-tree-cost (parser-unit-tree unit)))))
 
 (defun parser-unit-mapc (function unit)
   (funcall function unit)
@@ -134,7 +137,9 @@
                 (let ((count (if *parser-unit-extract-recursive-p* (1- (parser-unit-count unit)) (parser-unit-count unit))))
                   (parser-unit-mapc (lambda (unit) (decf (parser-unit-count unit) count)) unit))
                 (loop :for parent :in (parser-unit-parents unit)
-                      :do (deletef (parser-unit-children parent) unit))
+                      :do (deletef (parser-unit-children parent) unit)
+                          (setf (parser-unit-tree-cost parent) 0))
                 (setf (car (parser-unit-tree unit)) 'parser/call
-                      (cdr (parser-unit-tree unit)) (cons name args))))
+                      (cdr (parser-unit-tree unit)) (cons name args)
+                      (parser-unit-tree-cost unit) 1)))
         :finally (return (values form functions))))
