@@ -1,5 +1,20 @@
 (in-package #:parsonic)
 
+(defun list->conses-1 (form)
+  (destructuring-ecase form
+    ((parser/list &rest args)
+     (if args
+         `(parser/cons ,(car args) ,(list->conses-1 `(parser/list . ,(cdr args))))
+         `(parser/constantly nil)))))
+
+(defun conses->list-1 (form)
+  (destructuring-ecase form
+    ((parser/cons car cdr)
+     `(parser/list ,car . ,(cdr (conses->list-1 cdr))))
+    ((parser/constantly null)
+     (assert (null null))
+     `(parser/list))))
+
 (defun extract-prefix-merge-branches (branches)
   (loop :for key :in (delete-duplicates (mapcar #'car branches) :test #'equal)
         :collect (cons key (let ((ops (mapcar #'cdr (remove key branches :key #'car :test-not #'eql))))
@@ -63,6 +78,14 @@
       ((parser/apply function parser)
        (loop :for (key . op) :in (extract-prefix parser)
              :collect (cons key `(parser/apply ,function ,op))))
+      ((parser/list &rest args)
+       (declare (ignore args))
+       (loop :for (key . op) :in (extract-prefix (list->conses-1 form))
+             :collect (cons key (conses->list-1 op))))
+      (((parser/funcall parser/filter) function &rest parsers)
+       (loop :for (key . (apply f (list . ops))) :in (extract-prefix `(parser/apply ,function (parser/list . ,parsers)))
+             :do (assert (eq apply 'parser/apply)) (assert (eq list 'parser/list))
+             :collect (cons key `(,(car form) ,f . ,ops))))
       ((parser/constantly object)
        (declare (ignore object))
        (list (cons nil form)))
