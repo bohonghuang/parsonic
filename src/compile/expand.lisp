@@ -60,7 +60,8 @@
 (defun curry-arg (value)
   (with-gensyms (curry)
     (let (arg)
-      (setf arg (make-curry-arg
+      (setf (get curry 'lexical-store) t
+            arg (make-curry-arg
                  :parser (let ((parent-env *expand/compile-env*)
                                (parent-known *expand/compile-known*))
                            (lambda (&optional (function *expand*))
