@@ -15,12 +15,25 @@
      (assert (null null))
      `(parser/list))))
 
+(defun ors->or-1 (form)
+  (destructuring-case form
+    ((parser/or &rest parsers)
+     `(parser/or
+       . ,(loop :for parser :in parsers
+                :for form := (ors->or parser)
+                :if (eq (car form) 'parser/or)
+                  :append (cdr form)
+                :else
+                  :collect form)))
+    ((t &rest args) (declare (ignore args)) form)))
+
 (defun cse-extract-prefix-merge-branches (branches)
   (loop :for signature :in (delete-duplicates (mapcar #'car branches) :test #'equal)
         :collect (cons signature (let ((branches (mapcar #'cdr (remove signature branches :key #'car :test-not #'equal))))
                                    (if (= (length branches) 1)
                                        (first branches)
-                                       (cons `(parser/or . ,(mapcar #'car branches)) `(parser/or . ,(mapcar #'cdr branches))))))))
+                                       (cons `(parser/or . ,(delete-duplicates (mapcar #'car branches) :test #'equal))
+                                             `(parser/or . ,(delete-duplicates (mapcar #'cdr branches) :test #'equal))))))))
 
 (defun cse-extract-prefix-fail-p (branches)
   (and (= (length branches) 1) (eq (car (first branches)) t)))
@@ -66,14 +79,15 @@
            ;; (list (list* t form '(parser/or)))
            ))
       ((parser/unit signature body)
-       (let ((results (cons
-                       (list* signature `(parser/constantly ,*cse-var*) `(parser/or))
-                       (loop :for (branch-signature . (then . else)) :in (cse-extract-prefix body)
-                             :collect (list* branch-signature
-                                             `(parser/unit ((+ ,branch-signature) ,signature) ,then)
-                                             `(parser/unit ((- ,branch-signature) ,signature) ,else))))))
-         (push (cons form results) (gethash signature *cse-units*))
-         results))
+       (destructuring-bind (name lambda-list) signature
+         (let ((results (cons
+                         (list* signature `(parser/constantly ,*cse-var*) `(parser/or))
+                         (loop :for (branch-signature . (then . else)) :in (cse-extract-prefix body)
+                               :collect (list* branch-signature
+                                               `(parser/unit ((+ ,branch-signature ,name) ,lambda-list) ,then)
+                                               `(parser/unit ((- ,branch-signature ,name) ,lambda-list) ,else))))))
+           (push (cons form results) (gethash signature *cse-units*))
+           results)))
       ((parser/let name bindings body)
        (if name
            nil
@@ -104,7 +118,7 @@
        (loop :for (signature . (then . else)) :in (cse-extract-prefix parser)
              :collect (list* signature `(parser/apply ,then) `(parser/cut ,else)))))))
 
-(defparameter *cse-threshold* 4)
+(defparameter *cse-threshold* 2)
 
 (defun or->cse (form)
   (if (consp form)
@@ -118,41 +132,101 @@
                        (first (sort units #'> :key (compose #'length #'cdr #'first (rcurry #'gethash *cse-units*) #'car)))
                      `(parser/or
                        (parser/funcall
-                        (lambda (,*cse-var*) (with-codegen ,(or->cse then)))
-                        ,(car (first (gethash signature *cse-units*))))
-                       ,(or->cse else)))
+                        (lambda (,*cse-var*) (with-codegen ,(or->cse (ors->or-1 then))))
+                        ,(or->cse (car (first (gethash signature *cse-units*)))))
+                       ,(or->cse (ors->or-1 else))))
                    (cons (car form) (mapcar #'or->cse args)))))
              (cons (car form) (mapcar #'or->cse args))))
         ((t &rest args) (cons (car form) (mapcar #'or->cse args))))
       form))
 
-
 (defparser test-0 ()
   '"123")
 
+(defparser test-3 ()
+  '"888")
+
 (defparser test-1 ()
-  (test-0)
+  (rep (or (test-0) (test-3)))
   '"123"
   (constantly 123))
 
 (defparser test-2 ()
-  (test-0)
+  (or (test-0) (test-3))
   '"456"
   (constantly 456))
 
 (defparameter *optimize-passes* '(let->body satisfies->eql ors->or
                                   conses->list apply->funcall
                                   flatmap->map flatmap->let let->body
-                                  or->cse or->trie eql-list->eql*))
+                                  lexical->unit-args remove-intermediate-units or->cse))
+
+;; or->trie eql-list->eql*
+
+(with-open-file (stream #P"/tmp/临时/test.txt" :direction :output :if-exists :supersede)
+  (print (codegen-expand
+          '(yamson::yaml-value -1))
+         stream)
+  nil)
+
+(with-open-file (stream #P"/tmp/临时/test.txt" :direction :output :if-exists :supersede)
+  (print *
+         stream)
+  nil)
+
+(circular-tree-p *)
+
+(parsonic::extract/compile (codegen-expand '(yamson::yaml-value -1)))
+
+((codegen-expand '(yamson::yaml-value -1)))
+
+(defun validate-1 (form)
+  (let ((table (make-hash-table :test #'equal)))
+    (labels ((recur (form)
+               (if (consp form)
+                   (destructuring-case form
+                     (((parser/funcall parser/apply) function &rest parsers)
+                      (walk-parsers-in-lambda #'recur function)
+                      (mapc #'recur parsers))
+                     ((parser/unit signature body)
+                      (push body (gethash signature table))
+                      (recur body))
+                     ((t &rest args) (mapc #'recur args)))
+                   form)))
+      (recur form)
+      table)))
+
+(defun tree-soft-equal (a b)
+  (if (symbolp a)
+      (if (symbolp b)
+          (or (eq a b) (and (null (symbol-package a)) (null (symbol-package b))))
+          nil)
+      (if (consp a)
+          (if (consp b)
+              (and (tree-soft-equal (car a) (car b))
+                   (tree-soft-equal (cdr a) (cdr b)))
+              nil)
+          (equal a b))))
+
+(defun validate-2 (table)
+  (loop :for signature :being :each hash-key :of table :using (hash-value bodies)
+        :do (loop :for (a b) :on bodies
+                  :while b
+                  :do (assert (tree-soft-equal a b)))
+        :collect signature))
+
+(defun validate (form)
+  (validate-2 (validate-1 form)))
+
+(validate (codegen-expand '(yamson::yaml-value -1)))
+
+(extract/compile (codegen-expand '(yamson::yaml-value -1)))
 
 (let ((*optimize-passes* '(let->body satisfies->eql ors->or
                            conses->list apply->funcall
                            flatmap->map flatmap->let let->body
-                           or->cse)))
-  (codegen-expand
-    '(yamson::yaml-value -1)
-    ;; '(or (test-1) (test-2))
-    ))
+                           or->trie eql-list->eql*)))
+  (codegen-expand '(yamson::yaml-value -1)))
 
 (defun parse-string (string)
   (check-type string (simple-array character (*)))
@@ -163,4 +237,11 @@
      (or (test-1) (test-2)))
    string))
 
+(codegen-expand
+ '(or (test-1) (test-1) (test-2) (test-2)))
+
 (parse-string "123123")
+
+(codegen-expand
+ '(yamson::yaml-value -1)
+ )
