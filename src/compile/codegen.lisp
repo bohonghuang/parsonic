@@ -20,9 +20,6 @@
 (defun codegen-parse-error-p (result)
   `(eq ,result +codegen-parse-error+))
 
-(defun codegen-expand (form)
-  (optimize/compile (expand/compile form)))
-
 (defun codegen (form)
   (flet ((ignore-results-p ()
            (let ((*codegen-ignore-results-p* nil))
