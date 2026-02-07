@@ -19,14 +19,16 @@
                       (let ((*codegen-input* input)
                             (*codegen-blocks* (list block))
                             (*codegen-labels* (lambda (functions-or-body body) (nconcf local-functions functions-or-body) body)))
-                        (multiple-value-bind (form functions) (extract/compile (codegen-expand `(progn . ,body)))
+                        (multiple-value-bind (form functions) (extract/compile (optimize/compile (expand/compile `(progn . ,body))))
                           (let ((body (with-fresh-stack (codegen form))))
                             `(block ,block
-                               (labels ,(append
-                                         (loop :for (name lambda-list parser) :in functions
-                                               :collect (list name lambda-list
-                                                              (let ((*codegen-blocks* (cons name *codegen-blocks*)))
-                                                                (with-fresh-stack (codegen parser)))))
-                                         local-functions)
+                               (labels ,(delete-duplicates
+                                         (append
+                                             (loop :for (name lambda-list parser) :in functions
+                                                   :collect (list name lambda-list
+                                                                  (let ((*codegen-blocks* (cons name *codegen-blocks*)))
+                                                                    (with-fresh-stack (codegen parser)))))
+                                           local-functions)
+                                         :key #'first)
                                  ,body)))))))
                   input)))))))))
