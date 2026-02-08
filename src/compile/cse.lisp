@@ -38,10 +38,15 @@
     (setf (get symbol 'cse-var) *cse-count*)
     symbol))
 
+(defmacro cse-ensure-success (then &rest parsers)
+  `(if (some (curry #'equal '(parser/or)) (list . ,parsers)) '(parser/or) ,then))
+
 (defun cse-extract-prefix (form)
   (destructuring-ecase form
-    (((parser/satisfies parser/eql parser/constantly parser/call) &rest args)
+    (((parser/satisfies parser/eql parser/call) &rest args)
      (declare (ignore args)))
+    (((parser/constantly) object)
+     (list (list* nil `(parser/constantly ,object) '(parser/or))))
     ((parser/or &rest branches)
      (let ((subbranches-list (mapcar #'cse-extract-prefix branches)))
        (cse-extract-prefix-merge-branches
@@ -55,15 +60,27 @@
                                                                                :else
                                                                                  :collect branch))))))))
     ((parser/cons car cdr)
-     (loop :for (signature . (then . else)) :in (cse-extract-prefix car)
-           :collect (list* signature `(parser/cons ,then ,cdr) `(parser/cons ,else ,cdr))))
+     (cse-extract-prefix-merge-branches
+      (loop :for (signature . (then-car . else-car)) :in (cse-extract-prefix car)
+            :if signature
+              :collect (list* signature `(parser/cons ,then-car ,cdr) (cse-ensure-success `(parser/cons ,else-car ,cdr) else-car cdr))
+            :else
+              :nconc (loop :for (signature . (then-cdr . else-cdr)) :in (cse-extract-prefix cdr)
+                           :collect (list* signature
+                                           (cse-ensure-success `(parser/cons ,then-car ,then-cdr) then-car then-cdr)
+                                           (cse-ensure-success `(parser/cons ,then-car ,else-cdr) then-car else-cdr))))))
     ((parser/rep parser from to)
      (when (integerp from)
-       (loop :for (signature . (then . else)) :in (cse-extract-prefix parser)
-             :collect (list* signature
-                             `(parser/cons ,then (parser/rep ,parser ,(max (1- from) 0) (1- ,to)))
-                             (let ((else `(parser/cons ,else (parser/rep ,parser ,(max (1- from) 0) (1- ,to)))))
-                               (if (plusp from) else `(parser/or ,else (parser/constantly nil))))))))
+       (cse-extract-prefix-merge-branches
+        (nconc
+         (loop :for (signature . (then . else)) :in (cse-extract-prefix parser)
+               :collect (list* signature
+                               `(parser/cons ,then (parser/rep ,parser ,(max (1- from) 0) (1- ,to)))
+                               (let ((else (cse-ensure-success `(parser/cons ,else (parser/rep ,parser ,(max (1- from) 0) (1- ,to))) else)))
+                                 (if (plusp from) else `(parser/or ,else (parser/constantly nil))))))
+         #+nil
+         (when (zerop from)
+           (list (list* nil '(parser/constantly nil) '(parser/or))))))))
     ((parser/unit signature body)
      (destructuring-bind (name lambda-list) signature
        (let* ((signature (loop :for arg :in (lambda-list-arguments lambda-list)
@@ -91,31 +108,30 @@
                                                                            *cse-vars*)))
                                                     (cse-extract-prefix body))
              :collect (list* signature (if (eq (first then) 'parser/constantly)
-                                           (progn
-                                             (assert (get (second then) 'cse-var))
-                                             then)
+                                           (progn (assert (get (second then) 'cse-var)) then)
                                            `(parser/let ,name ,bindings ,then))
-                             (if (equal else '(parser/or)) else `(parser/let ,name ,bindings ,else))))))
+                             (cse-ensure-success `(parser/let ,name ,bindings ,else) else)))))
     ((parser/apply function parser)
      (loop :for (signature . (then . else)) :in (cse-extract-prefix parser)
-           :collect (list* signature `(parser/apply ,function ,then)
-                           (if (equal else '(parser/or)) '(parser/or) `(parser/apply ,function ,else)))))
+           :unless signature
+             :return nil
+           :collect (list* signature `(parser/apply ,function ,then) (cse-ensure-success `(parser/apply ,function ,else) else))))
     ((parser/list &rest args)
      (declare (ignore args))
      (loop :for (signature . (then . else)) :in (cse-extract-prefix (list->conses-1 form))
-           :collect (list* signature (conses->list-1 then) (if (equal else '(parser/or)) '(parser/or) (conses->list-1 else)))))
+           :collect (list* signature (conses->list-1 then) (cse-ensure-success (conses->list-1 else) else))))
     (((parser/funcall parser/filter) function &rest parsers)
      (loop :for (signature . ((apply1 f1 (list1 . ops1)) . else)) :in (cse-extract-prefix `(parser/apply ,function (parser/list . ,parsers)))
            :for (apply2 f2 (list2 . ops2)) := else
            :do (assert (eq apply1 'parser/apply)) (assert (eq list1 'parser/list))
            :collect (list* signature
                            `(,(car form) ,f1 . ,ops1)
-                           (if (equal else '(parser/or))
-                               '(parser/or)
-                               (progn
-                                 (assert (eq apply2 'parser/apply))
-                                 (assert (eq list2 'parser/list))
-                                 `(,(car form) ,f2 . ,ops2))))))
+                           (cse-ensure-success
+                            (progn
+                              (assert (eq apply2 'parser/apply))
+                              (assert (eq list2 'parser/list))
+                              `(,(car form) ,f2 . ,ops2))
+                            else))))
     ((parser/cut parser)
      (loop :for (signature . (then . else)) :in (cse-extract-prefix parser)
            :collect (list* signature `(parser/cut ,then) `(parser/cut ,else))))))
@@ -132,7 +148,11 @@
                   ((parser/or &rest args)
                    (if (>= (length args) *cse-threshold*)
                        (let ((*cse-units* (make-hash-table :test #'equal)))
-                         (if-let ((units (remove 1 (cse-extract-prefix form) :key (compose #'list-length (rcurry #'gethash *cse-units*) #'car))))
+                         (if-let ((units (loop :for unit :in (cse-extract-prefix form)
+                                               :for (signature) := unit
+                                               :when signature
+                                                 :when (> (length (gethash signature *cse-units*)) 1)
+                                                   :collect unit)))
                            (destructuring-bind (signature . (then . else))
                                (first (sort units #'> :key (compose #'list-length #'cdr #'first (rcurry #'gethash *cse-units*) #'car)))
                              (ors->or-1
