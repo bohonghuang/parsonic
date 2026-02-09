@@ -164,7 +164,7 @@
         ((t &rest args) (declare (ignore args)) (cons (car form) (mapcar #'flatmap->let (cdr form)))))
       form))
 
-(defparameter *inline-sequence-eql-threshold* 8)
+(defparameter *eql-list->eql*-threshold* 4)
 
 (defun eql-list->eql* (form)
   (if (consp form)
@@ -173,7 +173,7 @@
          `(,(car form) ,(walk-parsers-in-lambda #'eql-list->eql* function) . ,(mapcar #'eql-list->eql* parsers)))
         ((parser/list &rest parsers)
          (if (and (every (curry #'eq 'parser/eql) (mapcar #'car parsers))
-                  (> (length parsers) *inline-sequence-eql-threshold*))
+                  (> (length parsers) *eql-list->eql*-threshold*))
              `(parser/eql* ,(mapcar #'second parsers))
              (cons (car form) (mapcar #'eql-list->eql* (cdr form)))))
         ((t &rest args) (declare (ignore args))
