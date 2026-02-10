@@ -21,3 +21,6 @@
 (defparser not (parser)
   (let ((time (or (progn (peek parser) (constantly 1)) (constantly 0))))
     (rep (or) time)))
+
+(defparser notinline (&optional (parser (list)))
+  ((lambda () (progn (parser parser)))))
