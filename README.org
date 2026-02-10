@@ -1,0 +1,27 @@
+#+TITLE: Parsonic
+
+Fast parser combinator library for Common Lisp.
+
+* Introduction
+Parsonic is a parser combinator framework for Common Lisp, but comes
+with an optimizing compiler.
+
+Like most parser combinator libraries, Parsonic allows defining
+context-sensitive rules in a functional way, supporting recursion
+(right-recursion), higher-order parsers, currying, and runtime dynamic
+parser selection, all of which are analyzed and transformed at compile
+time with zero runtime overhead.
+
+Parsonic performs automatic inlining, CSE optimization, and Trie jump
+table generation at compile time, and then compiling all parser
+definitions down to efficient Lisp code within a lambda specialized for
+the specific input type.
+* Examples
+This library is currently developed primarily for my personal
+projects; there is no guarantee of API or implementation stability.
+For those interested, the following parser implementations can serve
+as examples for reference:
+- [[https://github.com/bohonghuang/yamson/tree/master/json][JSON Parser]] \\
+  A JSON parser implemented in roughly 100 LOC.
+- [[https://github.com/bohonghuang/yamson/tree/master/yaml][YAML 1.2 Parser]] \\
+  A fairly complete implementation of a YAML 1.2 parser.
