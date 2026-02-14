@@ -19,11 +19,11 @@
 (defvar *input-index*)
 (defvar *input-length*)
 
-(defconstant +input-type-simple-array-character+ (intern (princ-to-string '(simple-array character (*)))))
+(defconstant +input-type-simple-array-character+ (intern (princ-to-string '(simple-array character (*))) #.*package*))
 
 (defmethod call-with-input/compile (body (input (eql +input-type-simple-array-character+)))
   (with-gensyms (index length)
-    (let ((input-var (intern (princ-to-string input))))
+    (let ((input-var (intern (princ-to-string input) #.*package*)))
       `(locally (declare (type (simple-array character (*)) ,input-var))
          (let ((,index 0) (,length (length ,input-var)))
            (declare (type non-negative-fixnum ,index ,length))
@@ -41,7 +41,7 @@
   (let ((index *input-index*)
         (length *input-length*))
     `(if (< ,index ,length)
-         (prog1 (aref ,(intern (princ-to-string input)) ,index) (incf ,index))
+         (prog1 (aref ,(intern (princ-to-string input) #.*package*) ,index) (incf ,index))
          +input-eof+)))
 
 (setf (assoc-value *input-type-mappings* '(simple-array character (*)) :test #'equal) +input-type-simple-array-character+)

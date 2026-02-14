@@ -9,7 +9,7 @@
                          (or (assoc-value *input-type-mappings* input :test #'type=) input))
                        input-var)))
         (with-gensyms (block)
-          `(lambda (,input-var &aux (,(intern (princ-to-string input)) ,input-var))
+          `(lambda (,input-var &aux (,(intern (princ-to-string input) #.*package*) ,input-var))
              (declare . ,declarations)
              ,(call-with-cons-pool/compile
                (lambda ()
