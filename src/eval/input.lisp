@@ -49,3 +49,19 @@
 
 (defmethod call-with-input/eval (thunk (input list))
   (funcall thunk (make-list-input :list input)))
+
+(defmethod input-read/eval ((input stream))
+  (handler-case (funcall (eswitch ((stream-element-type input) :test #'equal)
+                           ('(unsigned-byte 8) #'read-byte)
+                           ('character #'read-char))
+                         input)
+    (end-of-file () +input-eof+)))
+
+(defmethod input-position/eval ((input stream))
+  (file-position input))
+
+(defmethod (setf input-position/eval) (value (input stream))
+  (file-position input value))
+
+(defmethod call-with-input/eval (thunk (input stream))
+  (funcall thunk input))
