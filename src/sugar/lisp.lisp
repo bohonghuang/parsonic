@@ -1,5 +1,11 @@
 (in-package #:parsonic)
 
+(defun body-parser-form (body)
+  (case (length body)
+    (0 '(or))
+    (1 (first body))
+    (t `(progn . ,body))))
+
 (defmethod expand-expr ((op (eql 'let)) &rest args)
   (destructuring-bind (bindings &rest body) args
     (multiple-value-bind (declarations body) (body-declarations body)
@@ -16,12 +22,15 @@
          `(apply
            (lambda ,args
              (declare (ignore . ,ignored) . ,declarations)
-             (parser
-              ,(case (length body)
-                 (0 '(or))
-                 (1 (first body))
-                 (t `(progn . ,body)))))
+             (parser ,(body-parser-form body)))
            (list . ,(mapcar #'second bindings))))))))
+
+(defmethod expand-expr ((op (eql 'let*)) &rest args)
+  (destructuring-bind (bindings &rest body) args
+    (expand
+     (loop :for form := (body-parser-form body) :then `(let (,binding) ,form)
+           :for binding :in (reverse bindings)
+           :finally (return form)))))
 
 (defmethod expand-expr ((op (eql 'for)) &rest args)
   (destructuring-bind (bindings &rest body) args
