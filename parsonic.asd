@@ -33,4 +33,6 @@
                              (:file "lisp")
                              (:file "override")
                              (:file "predef" :depends-on ("lisp" "override")))
-                :depends-on ("package" "expand" "macro"))))
+                :depends-on ("package" "expand" "macro"))
+               (:file "position"
+                :depends-on ("package" "eval" "compile" "sugar"))))
