@@ -11,26 +11,25 @@
 
 (defconstant +input-eof+ 'eof)
 
-(defstruct string-input
-  (string "" :type (simple-array character (*)))
+(defstruct vector-input
+  (vector #() :type vector)
   (index 0 :type non-negative-fixnum))
 
-(defmethod input-read/eval ((input string-input))
-  (let ((string (string-input-string input))
-        (index (string-input-index input)))
-    (if (< index (length string))
-        (progn (incf (string-input-index input)) (aref string index))
+(defmethod input-read/eval ((input vector-input))
+  (let ((vector (vector-input-vector input))
+        (index (vector-input-index input)))
+    (if (< index (length vector))
+        (progn (incf (vector-input-index input)) (aref vector index))
         +input-eof+)))
 
-(defmethod input-position/eval ((input string-input))
-  (string-input-index input))
+(defmethod input-position/eval ((input vector-input))
+  (vector-input-index input))
 
-(defmethod (setf input-position/eval) (value (input string-input))
-  (setf (string-input-index input) value))
+(defmethod (setf input-position/eval) (value (input vector-input))
+  (setf (vector-input-index input) value))
 
-(defmethod call-with-input/eval (thunk (input array))
-  (etypecase input
-    ((array character) (funcall thunk (make-string-input :string (coerce input '(simple-array character (*))))))))
+(defmethod call-with-input/eval (thunk (input vector))
+  (funcall thunk (make-vector-input :vector input)))
 
 (defstruct list-input
   (list nil :type list))
