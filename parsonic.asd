@@ -18,6 +18,7 @@
                (:module "compile"
                 :components ((:file "input")
                              (:file "expand")
+                             (:file "bounds")
                              (:file "trie")
                              (:file "optimize" :depends-on ("expand" "trie" "cse"))
                              (:file "stack")
