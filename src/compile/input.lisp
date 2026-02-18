@@ -19,6 +19,33 @@
 (defvar *input-index*)
 (defvar *input-length*)
 
+(defconstant +input-type-simple-array-unsigned-byte-8+ (intern (princ-to-string '(simple-array unsigned-byte-8 (*))) #.*package*))
+
+(defmethod call-with-input/compile (body (input (eql +input-type-simple-array-unsigned-byte-8+)))
+  (with-gensyms (index length)
+    (let ((input-var (intern (princ-to-string input) #.*package*)))
+      `(locally (declare (type (simple-array (unsigned-byte 8) (*)) ,input-var))
+         (let ((,index 0) (,length (length ,input-var)))
+           (declare (type non-negative-fixnum ,index ,length))
+           ,(let ((*input-index* index)
+                  (*input-length* length))
+              (funcall body input)))))))
+
+(defmethod input-position/compile ((input (eql +input-type-simple-array-unsigned-byte-8+)))
+  *input-index*)
+
+(defmethod (setf input-position/compile) (value (input (eql +input-type-simple-array-unsigned-byte-8+)))
+  `(setf ,*input-index* ,value))
+
+(defmethod input-read/compile ((input (eql +input-type-simple-array-unsigned-byte-8+)))
+  (let ((index *input-index*)
+        (length *input-length*))
+    `(if (< ,index ,length)
+         (prog1 (aref ,(intern (princ-to-string input) #.*package*) ,index) (incf ,index))
+         +input-eof+)))
+
+(setf (assoc-value *input-type-mappings* '(simple-array (unsigned-byte 8) (*)) :test #'equal) +input-type-simple-array-unsigned-byte-8+)
+
 (defconstant +input-type-simple-array-character+ (intern (princ-to-string '(simple-array character (*))) #.*package*))
 
 (defmethod call-with-input/compile (body (input (eql +input-type-simple-array-character+)))
