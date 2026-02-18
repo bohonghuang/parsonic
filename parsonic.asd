@@ -19,7 +19,7 @@
                 :components ((:file "input")
                              (:file "expand")
                              (:file "trie")
-                             (:file "optimize" :depends-on ("trie" "cse"))
+                             (:file "optimize" :depends-on ("expand" "trie" "cse"))
                              (:file "stack")
                              (:file "codegen" :depends-on ("input" "expand" "stack"))
                              (:file "pool" :depends-on ("codegen"))

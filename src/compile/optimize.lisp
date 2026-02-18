@@ -180,8 +180,42 @@
          (cons (car form) (mapcar #'eql-list->eql* (cdr form)))))
       form))
 
-(defparameter *optimize-passes* '(let->body satisfies->eql ors->or
-                                  conses->list apply->funcall
+(defun funcalls->funcall (form &optional (funcall-parsers (cons nil nil)))
+  (if (consp form)
+      (destructuring-case form
+        ((parser/funcall function &rest parsers)
+         (appendf (cdr funcall-parsers) parsers)
+         (destructuring-ecase function
+           ((lambda lambda-list &rest body)
+            (multiple-value-bind (declarations body) (body-declarations body)
+              (if (and (equal body `((with-codegen (parser/funcall . ,(ignore-errors (rest (second (first body))))))))
+                       (null (intersection lambda-list lambda-list-keywords)))
+                  (let ((funcall-rest (funcalls->funcall (second (first body)) funcall-parsers)))
+                    (destructuring-ecase funcall-rest
+                      ((parser/funcall (lambda lambda-list-rest &rest body) &rest parsers-rest)
+                       (assert (eq lambda 'lambda))
+                       (if (loop :with symbols := (form-symbol-set funcall-parsers)
+                                 :for arg :in lambda-list
+                                 :thereis (and (not (member arg lambda-list-keywords))
+                                               (gethash (car (ensure-list arg)) symbols)))
+                           `(parser/funcall
+                             (lambda ,lambda-list
+                               (declare . ,declarations)
+                               (with-codegen ,funcall-rest))
+                             ,@(mapcar #'funcalls->funcall parsers))
+                           (multiple-value-bind (declarations-rest body) (body-declarations body)
+                             `(parser/funcall
+                               (lambda (,@lambda-list ,@lambda-list-rest)
+                                 (declare ,@declarations ,@declarations-rest)
+                                 ,@body)
+                               ,@(mapcar #'funcalls->funcall parsers) ,@parsers-rest))))))
+                  `(parser/funcall ,(walk-parsers-in-lambda #'funcalls->funcall function) . ,(mapcar #'funcalls->funcall parsers)))))))
+        ((parser/apply function parser) `(parser/apply ,(walk-parsers-in-lambda #'funcalls->funcall function) ,(funcalls->funcall parser)))
+        ((t &rest args) (declare (ignore args)) (cons (car form) (mapcar #'funcalls->funcall (cdr form)))))
+      form))
+
+(defparameter *optimize-passes* '(let->body satisfies->eql ors->or conses->list
+                                  apply->funcall funcalls->funcall
                                   flatmap->map flatmap->let let->body
                                   or->cse or->trie eql-list->eql*))
 
