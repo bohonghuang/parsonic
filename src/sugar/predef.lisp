@@ -19,7 +19,7 @@
             ((lambda () (if (eq value #1#) (parser (or)) (parser (constantly value)))))))))))
 
 (defparser not (parser)
-  (let ((time (or (progn (peek parser) (constantly 1)) (constantly 0))))
+  (let ((time (or (progn (peek (progn parser (constantly nil))) (constantly 1)) (constantly 0))))
     (rep (or) time)))
 
 (defparser notinline (&optional (parser (list)))
