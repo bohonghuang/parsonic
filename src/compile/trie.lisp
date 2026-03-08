@@ -35,6 +35,9 @@
          (return-from trie-extract (list (cons t form)))
          ,results)))
 
+(defmacro trie-extract-1- (number)
+  `(1- ,number))
+
 (defun trie-extract (form)
   (destructuring-ecase form
     ((parser/satisfies function)
@@ -63,12 +66,12 @@
               :nconc (loop :for (key . op-cdr) :in (trie-extract cdr)
                            :collect (cons key `(parser/cons ,op-car ,op-cdr))))))
     ((parser/rep parser from to)
-     (if (integerp from)
+     (if (and (integerp from) (not (equal to `(trie-extract-1- ,(second (ensure-list to))))))
          (trie-extract-merge-branches
           (nconc
            (loop :for (key . op) :in (trie-ensure-success (trie-extract parser))
                  :do (assert key)
-                 :collect (cons key `(parser/cons ,op (parser/rep ,parser ,(max (1- from) 0) (1- ,to)))))
+                 :collect (cons key `(parser/cons ,op (parser/rep ,parser ,(max (1- from) 0) (trie-extract-1- ,to)))))
            #-nil
            (when (zerop from)
              (list (cons nil '(parser/constantly nil))))))

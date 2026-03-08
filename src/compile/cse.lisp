@@ -42,6 +42,9 @@
 (defmacro cse-ensure-success (then &rest parsers)
   `(if (some (curry #'equal '(parser/or)) (list . ,parsers)) '(parser/or) ,then))
 
+(defmacro cse-extract-1- (number)
+  `(1- ,number))
+
 (defun cse-extract (form)
   (destructuring-ecase form
     (((parser/satisfies parser/eql parser/call) &rest args)
@@ -71,12 +74,12 @@
                                            (cse-ensure-success `(parser/cons ,then-car ,then-cdr) then-car then-cdr)
                                            (cse-ensure-success `(parser/cons ,then-car ,else-cdr) then-car else-cdr))))))
     ((parser/rep parser from to)
-     (when (integerp from)
+     (when (and (integerp from) (not (equal to `(cse-extract-1- ,(second (ensure-list to))))))
        (cse-extract-merge-branches
         (nconc
          (loop :for (signature . (then . else)) :in (cse-extract parser)
                :collect (list* signature
-                               `(parser/cons ,then (parser/rep ,parser ,(max (1- from) 0) (1- ,to)))
+                               `(parser/cons ,then (parser/rep ,parser ,(max (1- from) 0) (cse-extract-1- ,to)))
                                (let ((else (cse-ensure-success `(parser/cons ,else (parser/rep ,parser ,(max (1- from) 0) (1- ,to))) else)))
                                  (if (plusp from) else `(parser/or ,else (parser/constantly nil))))))
          #+nil
