@@ -123,8 +123,8 @@
       form))
 
 (defparameter *parser-unit-extract-threshold-count* 2)
-(defparameter *parser-unit-extract-threshold-cost* 16)
-(defparameter *parser-unit-extract-threshold-total-cost* 64)
+(defparameter *parser-unit-extract-threshold-cost* 8)
+(defparameter *parser-unit-extract-threshold-total-cost* 32)
 (defparameter *parser-unit-extract-recursive-p* t)
 
 (defun extract/compile (form)
