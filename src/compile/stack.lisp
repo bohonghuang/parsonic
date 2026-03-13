@@ -4,7 +4,8 @@
 (defvar *codegen-blocks*)
 (defvar *codegen-list-vars*)
 
-(defparameter *emulate-stack-allocation-p* (progn #-(or sbcl ccl) 'lazy))
+(defconstant +emulate-stack-allocation-p+ (progn #-(or sbcl ccl) 'lazy))
+(defparameter *emulate-stack-allocation-p* +emulate-stack-allocation-p+)
 
 (defun codegen-make-conses (size)
   (ecase *emulate-stack-allocation-p*
@@ -32,7 +33,8 @@
 
 (defun call-with-fresh-stack (body)
   (with-gensyms (result error-info)
-    (let ((*codegen-list-vars* nil))
+    (let ((*emulate-stack-allocation-p* +emulate-stack-allocation-p+)
+          (*codegen-list-vars* nil))
       (let ((body (funcall body)))
         (if *codegen-list-vars*
             `(let ,(loop :for (var . (size)) :in *codegen-list-vars*
