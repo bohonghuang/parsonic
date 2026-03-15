@@ -153,13 +153,13 @@
           :do (setf sequential-binding-p t)
         :else
           :append (let ((*expand/compile-env* (if sequential-binding-p (append lexical-args *expand/compile-env*) *expand/compile-env*)))
-                    (labels ((recur (name value)
+                    (labels ((recur (value &optional (arg (curry #'parser-arg name)))
                                (typecase value
                                  ((cons (member curry rcurry) list)
-                                  (let ((curry-args (loop :for arg :in (cdr value) :collect (curry-arg arg))))
-                                    (cons (parser-arg name (cons (car value) curry-args)) curry-args)))
-                                 (t (list (parser-arg name value))))))
-                      (recur name value)))
+                                  (let ((curry-args (loop :for arg :in (cdr value) :collect (car (recur arg #'curry-arg)))))
+                                    (cons (funcall arg (cons (car value) curry-args)) curry-args)))
+                                 (t (list (funcall arg value))))))
+                      (recur value)))
             :into lexical-args
         :finally (return lexical-args)))
 
