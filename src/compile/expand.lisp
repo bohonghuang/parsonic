@@ -156,8 +156,13 @@
                     (labels ((recur (value &optional (arg (curry #'parser-arg name)))
                                (typecase value
                                  ((cons (member curry rcurry) list)
-                                  (let ((curry-args (loop :for arg :in (cdr value) :collect (car (recur arg #'curry-arg)))))
-                                    (cons (funcall arg (cons (car value) curry-args)) curry-args)))
+                                  (multiple-value-bind (car-args cdr-args)
+                                      (loop :for arg :in (cdr value)
+                                            :for (car . cdr) := (recur arg #'curry-arg)
+                                            :collect car :into car-args
+                                            :append cdr :into cdr-args
+                                            :finally (return (values car-args cdr-args)))
+                                    (cons (funcall arg (cons (car value) car-args)) (append car-args cdr-args))))
                                  (t (list (funcall arg value))))))
                       (recur value)))
             :into lexical-args
