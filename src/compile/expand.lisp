@@ -262,24 +262,21 @@
 
 (defmethod expand-expr/compile ((op (eql 'apply)) &rest args)
   (destructuring-bind (function parser) args
-    (filter-lexical-env
-     (receive-lexical-env
-      `(parser/apply
-        ,(destructuring-bind (lambda lambda-list &rest body) function
-           (declare (ignore body))
-           (assert (eq lambda 'lambda))
-           (let* ((args (loop :for arg :in lambda-list
-                              :for (name) := (ensure-list arg)
-                              :unless (member name lambda-list-keywords)
-                                :collect (with-gensyms (lexical)
-                                           (setf (get lexical 'lexical-store) t)
-                                           (make-parser-arg
-                                            :parser (curry #'error 'error)
-                                            :binding (list name lexical)))))
-                  (*expand/compile-env* (append args *expand/compile-env*)))
-             (walk-parsers-in-lambda (lambda (parser) (send-lexical-env (expand parser) args)) function)))
-        ,(expand parser)))
-     (rcurry #'gethash (form-symbol-set (cons function parser))))))
+    `(parser/apply
+      ,(destructuring-bind (lambda lambda-list &rest body) function
+         (declare (ignore body))
+         (assert (eq lambda 'lambda))
+         (let* ((args (loop :for arg :in lambda-list
+                            :for (name) := (ensure-list arg)
+                            :unless (member name lambda-list-keywords)
+                              :collect (with-gensyms (lexical)
+                                         (setf (get lexical 'lexical-store) t)
+                                         (make-parser-arg
+                                          :parser (curry #'error 'error)
+                                          :binding (list name lexical)))))
+                (*expand/compile-env* (append args *expand/compile-env*)))
+           (walk-parsers-in-lambda (lambda (parser) (send-lexical-env (expand parser) args)) function)))
+      ,(expand parser))))
 
 (defmethod expand-expr/compile ((op (eql 'parser-call)) &rest args)
   (destructuring-bind (function &rest args &aux (env *expand/compile-env*)) args
