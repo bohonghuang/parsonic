@@ -15,6 +15,9 @@
 (defun lexical-arg-name (arg)
   (first (lexical-arg-binding arg)))
 
+(defun lexical-arg-parser-p (arg)
+  (apply #'eq (lexical-arg-binding arg)))
+
 (defgeneric lexical-arg-send (arg))
 
 (defgeneric lexical-arg-receive (arg))
@@ -32,7 +35,7 @@
     ((cons symbol t)
      (eql (search (string '#:parser/) (symbol-name (car object))) 0))))
 
-(defun parser-arg (name value &optional (parser-arg-names (cons nil nil)))
+(defun parser-arg (name value)
   (with-gensyms (lexical)
     (let (arg)
       (setf (get lexical 'lexical-store) t
@@ -41,7 +44,6 @@
                                (parent-known *expand/compile-known*))
                            (let ((cache (make-hash-table :test #'eq)))
                              (lambda (&optional (function *expand*))
-                               (pushnew name (cdr parser-arg-names))
                                (setf (second (parser-arg-binding arg)) (first (parser-arg-binding arg)))
                                (ensure-gethash
                                 function cache
@@ -147,7 +149,7 @@
 (defmethod expand-expr/compile ((op (eql 'rcurry)) &rest args)
   (declare (ignore args)))
 
-(defun lambda-list-lexical-args (lambda-list-args &optional (parser-arg-names (cons nil nil)))
+(defun lambda-list-lexical-args (lambda-list-args)
   (loop :with sequential-binding-p := nil
         :for (name . value) :in lambda-list-args
         :if (member name lambda-list-keywords)
@@ -158,8 +160,8 @@
                                (typecase value
                                  ((cons (member curry rcurry) list)
                                   (let ((curry-args (loop :for arg :in (cdr value) :collect (curry-arg arg))))
-                                    (cons (parser-arg name (cons (car value) curry-args) parser-arg-names) curry-args)))
-                                 (t (list (parser-arg name value parser-arg-names))))))
+                                    (cons (parser-arg name (cons (car value) curry-args)) curry-args)))
+                                 (t (list (parser-arg name value))))))
                       (recur name value)))
             :into lexical-args
         :finally (return lexical-args)))
@@ -176,15 +178,16 @@
          (apply #'expand-expr/compile object))))))
 
 (defun collect-parser-args (name lambda-list-args body)
-  (let* ((parser-arg-names (cons nil nil))
-         (lexical-args (lambda-list-lexical-args lambda-list-args parser-arg-names)))
+  (let ((lexical-args (lambda-list-lexical-args lambda-list-args)))
     (flet ((collect-parser-args ()
              (let ((*expand* #'collect-parser-args-expand)
                    (*expand/compile-env* lexical-args)
                    (*expand/compile-known* (cons (cons (cons name nil) :collect) *expand/compile-known*)))
                (expand body)
                (loop :for (name . nil) :in lambda-list-args
-                     :collect (cons name (when (member name parser-arg-names) t))))))
+                     :for arg := (lexical-arg name)
+                     :unless (member name lambda-list-keywords)
+                       :collect (cons name (lexical-arg-parser-p arg))))))
       (let ((arg-info (ensure-gethash name *expand/compile-cache* (collect-parser-args))))
         (if (find :collect *expand/compile-known* :key #'cdr)
             (throw 'collect-parser-args
