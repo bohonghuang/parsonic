@@ -204,11 +204,11 @@
             (values arg-info lexical-args))))))
 
 (defun %expand-expr/compile (name lambda-list args body &aux (*expand/compile-cache* (or *expand/compile-cache* (make-hash-table :test #'equal))))
-  (filter-lexical-env
-   (receive-lexical-env
-    (let ((lambda-list-args (loop :for (name default-value) :in (mapcar #'ensure-list lambda-list)
-                                  :collect (cons name (if-let ((cons (assoc name args))) (cdr cons) default-value)))))
-      (multiple-value-bind (arg-info lexical-args) (collect-parser-args name lambda-list-args body)
+  (let ((lambda-list-args (loop :for (name default-value) :in (mapcar #'ensure-list lambda-list)
+                                :collect (cons name (if-let ((cons (assoc name args))) (cdr cons) default-value)))))
+    (multiple-value-bind (arg-info lexical-args) (collect-parser-args name lambda-list-args body)
+      (filter-lexical-env
+       (receive-lexical-env
         (if-let ((fdef (loop :for fdef :in *expand/compile-known*
                              :for ((fname . fargs) . nil) := fdef
                              :when (eq name fname)
@@ -247,8 +247,8 @@
                              (boolean (if lambda-list `(parser/let nil ,lambda-list ,result) result))
                              (symbol `(parser/let ,fname ,lambda-list ,result)))))
               (assert result)
-              result))))))
-   (rcurry #'gethash (form-symbol-set (mapcar #'cdr args)))))
+              result))))
+       (rcurry #'gethash (form-symbol-set (mapcar #'cdr (remove-if (curry #'assoc-value arg-info) args :key #'car))))))))
 
 (defun walk-parsers-in-lambda (function form)
   (typecase form
