@@ -184,16 +184,26 @@
                    (*expand/compile-env* lexical-args)
                    (*expand/compile-known* (cons (cons (cons name nil) :collect) *expand/compile-known*)))
                (expand body)
-               (loop :for (name . nil) :in lambda-list-args
-                     :for arg := (lexical-arg name)
-                     :unless (member name lambda-list-keywords)
-                       :collect (cons name (lexical-arg-parser-p arg))))))
+               (nconc
+                (loop :for (name . nil) :in lambda-list-args
+                      :for arg := (lexical-arg name)
+                      :unless (member name lambda-list-keywords)
+                        :collect (cons name (lexical-arg-parser-p arg)))
+                (loop :for arg :in lexical-args
+                      :when (curry-arg-p arg)
+                        :sum 1 :into name
+                        :and :collect (cons name (lexical-arg-parser-p arg)))))))
       (let ((arg-info (ensure-gethash name *expand/compile-cache* (collect-parser-args))))
         (if (find :collect *expand/compile-known* :key #'cdr)
             (throw 'collect-parser-args
-              (loop :for (name . parser-p) :in arg-info
-                    :when parser-p
-                      :do (expand (assoc-value lambda-list-args name))))
+              (loop :for arg :in lexical-args
+                    :when (parser-arg-p arg)
+                      :when (assoc-value arg-info (lexical-arg-name arg))
+                        :do (funcall (parser-arg-parser arg))
+                    :when (curry-arg-p arg)
+                      :sum 1 :into name
+                      :and :when (assoc-value arg-info name)
+                             :do (funcall (curry-arg-parser arg))))
             (values arg-info lexical-args))))))
 
 (defun %expand-expr/compile (name lambda-list args body &aux (*expand/compile-cache* (or *expand/compile-cache* (make-hash-table :test #'equal))))
