@@ -141,13 +141,10 @@
                  (symbol (if (symbol-package form) form (ensure-gethash form table (1+ (hash-table-count table)))))
                  (cons (cons (recur (car form)) (recur (cdr form))))
                  (t form))))
-      (recur (remove-intermediates (expand form))))))
-
-(defmethod expand-expr/compile ((op (eql 'curry)) &rest args)
-  (declare (ignore args)))
-
-(defmethod expand-expr/compile ((op (eql 'rcurry)) &rest args)
-  (declare (ignore args)))
+      (let ((form (remove-intermediates (expand form))))
+        (case (car form)
+          ((curry rcurry) (gensym (symbol-name (car form))))
+          (t (recur form)))))))
 
 (defun lambda-list-lexical-args (lambda-list-args)
   (loop :with sequential-binding-p := nil
