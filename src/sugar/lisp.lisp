@@ -21,7 +21,7 @@
         (expand
          `(apply
            (lambda ,args
-             (declare (ignore . ,ignored) . ,declarations)
+             (declare ,@(when ignored (list `(ignore . ,ignored))) . ,declarations)
              (parser ,(body-parser-form body)))
            (list . ,(mapcar #'second bindings))))))))
 
