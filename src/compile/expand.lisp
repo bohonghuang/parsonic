@@ -235,12 +235,7 @@
                  (variables (loop :for (name . value) :in args
                                   :unless (member name parser-arg-names)
                                     :collect (list name value)))
-                 (signature (list (cons name (mapcar #'cdr parsers)) lambda-list))
-                 (lambda-list (if (intersection lambda-list lambda-list-keywords)
-                                  (append lambda-list '(&initial) variables)
-                                  (progn
-                                    (assert (equal lambda-list (mapcar #'first variables)))
-                                    variables))))
+                 (signature (list (cons name (mapcar #'cdr parsers)) lambda-list)))
             (let* ((known (cons (cons (cons name parsers) nil) *expand/compile-known*))
                    (result (let ((*expand/compile-env* lexical-args)
                                  (*expand/compile-known* known))
@@ -250,6 +245,15 @@
                              result))
                    (fname (cdr (first known)))
                    (result (if fname result `(parser/unit ,signature ,result)))
+                   (lambda-list (if (and fname (intersection lambda-list lambda-list-keywords))
+                                    (append lambda-list '(&initial) variables)
+                                    (loop :for arg :in lambda-list
+                                          :unless (member arg lambda-list-keywords)
+                                            :collect (etypecase arg
+                                                       ((cons symbol (cons t null))
+                                                        (cons (car arg) (or (assoc-value variables (car arg)) (cdr arg))))
+                                                       (symbol
+                                                        (cons arg (or (assoc-value variables arg) (list nil))))))))
                    (result (etypecase fname
                              (boolean (if lambda-list `(parser/let nil ,lambda-list ,result) result))
                              (symbol `(parser/let ,fname ,lambda-list ,result))))
