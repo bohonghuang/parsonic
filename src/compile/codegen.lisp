@@ -143,29 +143,8 @@
       ((parser/apply function parser)
        (with-gensyms (arg)
          (codegen `(parser/funcall (lambda (,arg) (apply ,function ,arg)) ,parser))))
-      ((parser/let name lambda-list body)
-       (multiple-value-bind (lambda-list args)
-           (if (intersection lambda-list lambda-list-keywords)
-               (loop :with required
-                     :for (arg . rest) :on lambda-list
-                     :when (eq arg '&initial)
-                       :return (values
-                                args
-                                (progn
-                                  (assert (>= (length rest) (length required)))
-                                  (assert (every #'eq (mapcar #'first rest) required))
-                                  (mapcar #'second rest)))
-                     :when (member arg lambda-list-keywords)
-                       :do (setf required (copy-list args))
-                     :collect arg :into args)
-               (values (mapcar #'first lambda-list) (mapcar #'second lambda-list)))
-         (if name
-             (funcall *codegen-labels*
-                      (list (list name lambda-list
-                                  (let ((*codegen-blocks* (cons name *codegen-blocks*)))
-                                    (with-fresh-stack (codegen body)))))
-                      (codegen `(parser/call ,name . ,args)))
-             `((lambda ,lambda-list ,(codegen body)) . ,args))))
+      ((parser/let bindings body)
+       `(let ,bindings ,(codegen body)))
       ((parser/call name &rest args)
        (with-gensyms (result error-info)
          `(multiple-value-bind (,result ,error-info) (,name . ,args)

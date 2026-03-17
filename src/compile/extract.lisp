@@ -10,8 +10,7 @@
          (declare (ignore signature))
          (lexical->unit-args body (cons form blocks))
          form)
-        ((parser/let name bindings body)
-         (declare (ignore name))
+        ((parser/let bindings body)
          (loop :for binding :in bindings
                :for (nil val) := (ensure-list binding)
                :when (and val (symbolp val))

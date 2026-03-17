@@ -103,18 +103,17 @@
                                               `(parser/unit ((- ,branch-signature ,name) ,lambda-list) ,else))))))
          (when signature (push (cons form results) (gethash signature *cse-units*)))
          results)))
-    ((parser/let name bindings body)
-     (unless name
-       (loop :for (signature . (then . else)) :in (let ((*cse-vars* (nconc (nreverse
-                                                                            (loop :for binding :in bindings
-                                                                                  :unless (symbolp binding)
-                                                                                    :collect (cons (first binding) (second binding))))
-                                                                           *cse-vars*)))
-                                                    (cse-extract body))
-             :collect (list* signature (if (eq (first then) 'parser/constantly)
-                                           (progn (assert (get (second then) 'cse-var)) then)
-                                           `(parser/let ,name ,bindings ,then))
-                             (cse-ensure-success `(parser/let ,name ,bindings ,else) else)))))
+    ((parser/let bindings body)
+     (loop :for (signature . (then . else)) :in (let ((*cse-vars* (nconc (nreverse
+                                                                          (loop :for binding :in bindings
+                                                                                :unless (symbolp binding)
+                                                                                  :collect (cons (first binding) (second binding))))
+                                                                         *cse-vars*)))
+                                                  (cse-extract body))
+           :collect (list* signature (if (eq (first then) 'parser/constantly)
+                                         (progn (assert (get (second then) 'cse-var)) then)
+                                         `(parser/let ,bindings ,then))
+                           (cse-ensure-success `(parser/let ,bindings ,else) else))))
     ((parser/apply function parser)
      (loop :for (signature . (then . else)) :in (cse-extract parser)
            :unless signature
@@ -164,7 +163,7 @@
                                 (parser/funcall
                                  (lambda (,(cse-var))
                                    (with-codegen ,(let ((*cse-count* (1+ *cse-count*))) (or->cse then))))
-                                 (parser/let nil ,(second signature) ,(or->cse (car (first (gethash signature *cse-units*))))))
+                                 (parser/let ,(second signature) ,(or->cse (car (first (gethash signature *cse-units*))))))
                                 ,(or->cse (cse-or-delete-duplicates else)))))
                            #1=(cons (car form)
                                     (let ((cse-count *cse-count*))

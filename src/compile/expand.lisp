@@ -95,14 +95,14 @@
                     :when (or (not symbolsp) (member (first binding) symbols))
                       :collect binding :into bindings
                 :finally (return bindings))))
-    `(parser/let nil ,lexical-env ,form)))
+    `(parser/let ,lexical-env ,form)))
 
 (defun send-lexical-env (form env)
   (if-let ((lexical-env (loop :for arg :in env
                               :for binding := (lexical-arg-send arg)
                               :when binding
                                 :collect binding)))
-    `(parser/let nil ,lexical-env ,form)
+    `(parser/let ,lexical-env ,form)
     form))
 
 (defun form-symbol-set (form)
@@ -116,12 +116,11 @@
 
 (defun filter-lexical-env (form predicate)
   (destructuring-case form
-    ((parser/let name bindings body)
-     (assert (null name))
+    ((parser/let bindings body)
      (let ((bindings (loop :for (var val) :in bindings
                            :when (funcall predicate var)
                              :collect (list var val))))
-       (if bindings `(parser/let ,name ,bindings ,body) body)))
+       (if bindings `(parser/let ,bindings ,body) body)))
     ((t &rest args) (declare (ignore args)) form)))
 
 (defun remove-intermediates (form)
@@ -259,7 +258,7 @@
                                                (cons (car arg) (or (assoc-value variables (car arg)) (cdr arg))))
                                               (symbol
                                                (cons arg (or (assoc-value variables arg) (list nil)))))))
-                 (result `(parser/let nil ,bindings ,result))
+                 (result `(parser/let ,bindings ,result))
                  (result (if-let ((args (remove-if-not #'curry-arg-p lexical-args)))
                            (send-lexical-env result args)
                            result)))
