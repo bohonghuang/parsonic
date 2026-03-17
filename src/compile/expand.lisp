@@ -208,6 +208,12 @@
                              :do (funcall (curry-arg-parser arg))))
             (values arg-info lexical-args))))))
 
+(defun recursive-unit-name-p (name)
+  (destructuring-bind (name &rest parsers) name
+    (declare (ignore parsers))
+    (when (and (symbolp name) (get name 'parser))
+      name)))
+
 (defun %expand-expr/compile (name lambda-list args body &aux (*expand/compile-cache* (or *expand/compile-cache* (make-hash-table :test #'equal))))
   (let ((lambda-list-args (loop :for (name default-value) :in (mapcar #'ensure-list lambda-list)
                                 :collect (cons name (if-let ((cons (assoc name args))) (cdr cons) default-value)))))
@@ -224,6 +230,7 @@
           (let ((fname (etypecase (cdr fdef)
                          (boolean (setf (cdr fdef) (gensym (string name))))
                          (symbol (cdr fdef)))))
+            (setf (get fname 'parser) name)
             `(parser/call ,fname . ,(mapcar #'cdr (remove-if (rcurry #'member (cdar fdef) :key #'car) args :key #'car))))
           (let* ((parser-arg-names (mapcar #'car (remove-if-not #'cdr arg-info)))
                  (parsers (loop :for (name . value) :in lambda-list-args
@@ -235,33 +242,29 @@
                  (variables (loop :for (name . value) :in args
                                   :unless (member name parser-arg-names)
                                     :collect (list name value)))
-                 (signature (list (cons name (mapcar #'cdr parsers)) lambda-list)))
-            (let* ((known (cons (cons (cons name parsers) nil) *expand/compile-known*))
-                   (result (let ((*expand/compile-env* lexical-args)
-                                 (*expand/compile-known* known))
-                             (expand body)))
-                   (result (if-let ((args (remove-if #'curry-arg-p lexical-args)))
-                             (send-lexical-env result args)
-                             result))
-                   (fname (cdr (first known)))
-                   (result (if fname result `(parser/unit ,signature ,result)))
-                   (lambda-list (if (and fname (intersection lambda-list lambda-list-keywords))
-                                    (append lambda-list '(&initial) variables)
-                                    (loop :for arg :in lambda-list
-                                          :unless (member arg lambda-list-keywords)
-                                            :collect (etypecase arg
-                                                       ((cons symbol (cons t null))
-                                                        (cons (car arg) (or (assoc-value variables (car arg)) (cdr arg))))
-                                                       (symbol
-                                                        (cons arg (or (assoc-value variables arg) (list nil))))))))
-                   (result (etypecase fname
-                             (boolean (if lambda-list `(parser/let nil ,lambda-list ,result) result))
-                             (symbol `(parser/let ,fname ,lambda-list ,result))))
-                   (result (if-let ((args (remove-if-not #'curry-arg-p lexical-args)))
-                             (send-lexical-env result args)
-                             result)))
-              (assert result)
-              result))))
+                 (known (cons (cons (cons name parsers) nil) *expand/compile-known*))
+                 (result (let ((*expand/compile-env* lexical-args)
+                               (*expand/compile-known* known))
+                           (expand body)))
+                 (result (if-let ((args (remove-if #'curry-arg-p lexical-args)))
+                           (send-lexical-env result args)
+                           result))
+                 (fname (cdr (first known)))
+                 (signature (list (cons (or fname name) (mapcar #'cdr parsers)) lambda-list))
+                 (result `(parser/unit ,signature ,result))
+                 (bindings (loop :for arg :in lambda-list
+                                 :unless (member arg lambda-list-keywords)
+                                   :collect (etypecase arg
+                                              ((cons symbol (cons t null))
+                                               (cons (car arg) (or (assoc-value variables (car arg)) (cdr arg))))
+                                              (symbol
+                                               (cons arg (or (assoc-value variables arg) (list nil)))))))
+                 (result `(parser/let nil ,bindings ,result))
+                 (result (if-let ((args (remove-if-not #'curry-arg-p lexical-args)))
+                           (send-lexical-env result args)
+                           result)))
+            (assert result)
+            result)))
        (rcurry #'gethash (form-symbol-set (mapcar #'cdr (remove-if (curry #'assoc-value arg-info) args :key #'car))))))))
 
 (defun walk-parsers-in-lambda (function form)

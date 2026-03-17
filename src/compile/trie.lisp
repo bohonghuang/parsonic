@@ -76,10 +76,11 @@
            (when (zerop from)
              (list (cons nil '(parser/constantly nil))))))
          (list (cons t form))))
-    ((parser/unit signature body)
-     (destructuring-bind (name lambda-list) signature
-       (loop :for (key . op) :in (trie-ensure-success (trie-extract body))
-             :collect (cons key `(parser/unit ((,key ,name) ,lambda-list) ,op)))))
+    ((parser/unit (name lambda-list) body)
+     (if (recursive-unit-name-p name)
+         (list (cons t form))
+         (loop :for (key . op) :in (trie-ensure-success (trie-extract body))
+               :collect (cons key `(parser/unit ((,key ,name) ,lambda-list) ,op)))))
     ((parser/let name bindings body)
      (if name
          (list (cons t form))

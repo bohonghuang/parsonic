@@ -112,9 +112,14 @@
                (if (function-identity-p function)
                    (body (curry #'list 'progn))
                    (with-fresh-stack (body (curry #'list function))))))))
-      ((parser/unit signature parser)
-       (declare (ignore signature))
-       (codegen parser))
+      ((parser/unit (name lambda-list) body)
+       (if-let ((name (recursive-unit-name-p name)))
+         (funcall *codegen-labels*
+                  (list (list name lambda-list
+                              (let ((*codegen-blocks* (cons name *codegen-blocks*)))
+                                (with-fresh-stack (codegen body)))))
+                  (codegen `(parser/call ,name . ,(lambda-list-arguments lambda-list))))
+         (codegen body)))
       ((parser/funcall function &rest args)
        (destructuring-ecase function
          ((lambda lambda-list &rest body)

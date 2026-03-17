@@ -85,15 +85,15 @@
          #+nil
          (when (zerop from)
            (list (list* nil '(parser/constantly nil) '(parser/or))))))))
-    ((parser/unit signature body)
-     (destructuring-bind (name lambda-list) signature
+    ((parser/unit (name lambda-list) body)
+     (unless (recursive-unit-name-p name)
        (let* ((signature (loop :for arg :in (lambda-list-arguments lambda-list)
                                :for cons := (assoc arg *cse-vars*)
                                :when cons
                                  :if (constantp (cdr cons))
                                    :collect (list arg (cdr cons)) :into args
-                                 :else
-                                   :return nil
+                               :else
+                                 :return nil
                                :finally (return (list name args))))
               (results (nconc
                         (when signature (list (list* signature `(parser/constantly ,(cse-var)) `(parser/or))))

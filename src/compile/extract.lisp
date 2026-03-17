@@ -82,7 +82,7 @@
     ((cons symbol list)
      (destructuring-case tree
        ((parser/unit signature body)
-        (1+ (if (eq (parser-unit-tree unit) tree)
+        (1+ (if (or (eq (parser-unit-tree unit) tree) (recursive-unit-name-p (first signature)))
                 (parser-unit-calculate-tree-cost unit body)
                 (parser-unit-cost (find signature (parser-unit-children unit) :key (compose #'second #'parser-unit-tree) :test #'equal)))))
        ((t &rest args)
@@ -109,14 +109,16 @@
   (if (consp form)
       (destructuring-case form
         ((parser/unit signature parser)
-         (let* ((unit (ensure-gethash signature *parser-units* (make-parser-unit)))
-                (tree (let ((*parser-unit-parent* (when (zerop (parser-unit-count unit)) unit)))
-                        (parser-unit-walk parser))))
-           (when *parser-unit-parent*
-             (push unit (parser-unit-children *parser-unit-parent*))
-             (pushnew *parser-unit-parent* (parser-unit-parents unit)))
-           (incf (parser-unit-count unit))
-           (setf (parser-unit-tree unit) (or (parser-unit-tree unit) `(parser/unit ,signature ,tree)))))
+         (if (recursive-unit-name-p (first signature))
+             (list (car form) signature (parser-unit-walk parser))
+             (let* ((unit (ensure-gethash signature *parser-units* (make-parser-unit)))
+                    (tree (let ((*parser-unit-parent* (when (zerop (parser-unit-count unit)) unit)))
+                            (parser-unit-walk parser))))
+               (when *parser-unit-parent*
+                 (push unit (parser-unit-children *parser-unit-parent*))
+                 (pushnew *parser-unit-parent* (parser-unit-parents unit)))
+               (incf (parser-unit-count unit))
+               (setf (parser-unit-tree unit) (or (parser-unit-tree unit) `(parser/unit ,signature ,tree))))))
         ((t &rest args)
          (declare (ignore args))
          (cons (car form) (mapcar #'parser-unit-walk (cdr form)))))
