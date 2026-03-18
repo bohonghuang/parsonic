@@ -207,6 +207,15 @@
                              :do (funcall (curry-arg-parser arg))))
             (values arg-info lexical-args))))))
 
+(defun recursive-unit-name (definition)
+  (destructuring-bind (name &rest args) definition
+    (declare (ignore args))
+    (ensure-gethash
+     definition *expand/compile-cache*
+     (let ((name (gensym (symbol-name name))))
+       (setf (get name 'parser) name)
+       name))))
+
 (defun recursive-unit-name-p (name)
   (destructuring-bind (name &rest parsers) name
     (declare (ignore parsers))
@@ -227,9 +236,8 @@
                                            :always (equal (parser-signature (assoc-value lambda-list-args name)) value))
                                  :return fdef)))
           (let ((fname (etypecase (cdr fdef)
-                         (boolean (setf (cdr fdef) (gensym (string name))))
+                         (boolean (setf (cdr fdef) (recursive-unit-name (car fdef))))
                          (symbol (cdr fdef)))))
-            (setf (get fname 'parser) name)
             `(parser/call ,fname . ,(mapcar #'cdr (remove-if (rcurry #'member (cdar fdef) :key #'car) args :key #'car))))
           (let* ((parser-arg-names (mapcar #'car (remove-if-not #'cdr arg-info)))
                  (parsers (loop :for (name . value) :in lambda-list-args
