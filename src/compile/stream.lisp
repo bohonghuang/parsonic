@@ -5,6 +5,33 @@
 
 (defparameter *input-buffer-size* 4096)
 
+(defun stream-read/compile ()
+  (let ((buffer *input-buffer*)
+        (buffer-length *input-length*)
+        (ring-buffer *input-ring-buffer*))
+    (with-gensyms (position offset)
+      `(let ((,position (buffered-streams::stream-ring-buffer-stream-position ,ring-buffer))
+             (,offset (buffered-streams::stream-ring-buffer-buffer-offset ,ring-buffer)))
+         (declare (type non-negative-fixnum ,position))
+         (if (<= (buffered-streams::stream-ring-buffer-stream-start ,ring-buffer)
+                 ,position
+                 (1- (buffered-streams::stream-ring-buffer-stream-end ,ring-buffer)))
+             (prog1 (aref ,buffer (mod (- ,position ,offset) ,buffer-length))
+               (setf (buffered-streams::stream-ring-buffer-stream-position ,ring-buffer) (1+ ,position)))
+             (buffered-streams::stream-ring-buffer-read-one ,ring-buffer +input-eof+))))))
+
+(defun stream-position/compile ()
+  `(buffered-streams::stream-ring-buffer-stream-position ,*input-ring-buffer*))
+
+(defun (setf stream-position/compile) (value)
+  (let ((ring-buffer *input-ring-buffer*))
+    (once-only (value)
+      `(if (<= (buffered-streams::stream-ring-buffer-stream-start ,ring-buffer)
+               ,value
+               (1- (buffered-streams::stream-ring-buffer-stream-end ,ring-buffer)))
+           (setf (buffered-streams::stream-ring-buffer-stream-position ,ring-buffer) ,value)
+           (buffered-streams::stream-ring-buffer-seek ,ring-buffer ,value)))))
+
 (deftype binary-input-stream ()
   'stream)
 
@@ -21,31 +48,13 @@
             (funcall body input))))))
 
 (defmethod input-position/compile ((input (eql 'binary-input-stream)))
-  `(buffered-streams::stream-ring-buffer-stream-position ,*input-ring-buffer*))
+  (stream-position/compile))
 
 (defmethod (setf input-position/compile) (value (input (eql 'binary-input-stream)))
-  (let ((ring-buffer *input-ring-buffer*))
-    (once-only (value)
-      `(if (<= (buffered-streams::stream-ring-buffer-stream-start ,ring-buffer)
-               ,value
-               (1- (buffered-streams::stream-ring-buffer-stream-end ,ring-buffer)))
-           (setf (buffered-streams::stream-ring-buffer-stream-position ,ring-buffer) ,value)
-           (buffered-streams::stream-ring-buffer-seek ,ring-buffer ,value)))))
+  (setf (stream-position/compile) value))
 
 (defmethod input-read/compile ((input (eql 'binary-input-stream)))
-  (let ((buffer *input-buffer*)
-        (buffer-length *input-length*)
-        (ring-buffer *input-ring-buffer*))
-    (with-gensyms (position offset)
-      `(let ((,position (buffered-streams::stream-ring-buffer-stream-position ,ring-buffer))
-             (,offset (buffered-streams::stream-ring-buffer-buffer-offset ,ring-buffer)))
-         (declare (type non-negative-fixnum ,position))
-         (if (<= (buffered-streams::stream-ring-buffer-stream-start ,ring-buffer)
-                 ,position
-                 (1- (buffered-streams::stream-ring-buffer-stream-end ,ring-buffer)))
-             (prog1 (aref ,buffer (mod (- ,position ,offset) ,buffer-length))
-               (setf (buffered-streams::stream-ring-buffer-stream-position ,ring-buffer) (1+ ,position)))
-             (buffered-streams::stream-ring-buffer-read-one ,ring-buffer +input-eof+))))))
+  `(the (or (unsigned-byte 8) (eql ,+input-eof+)) ,(stream-read/compile)))
 
 (deftype character-input-stream ()
   'stream)
@@ -63,10 +72,10 @@
             (funcall body input))))))
 
 (defmethod input-position/compile ((input (eql 'character-input-stream)))
-  (input-position/compile 'binary-input-stream))
+  (stream-position/compile))
 
 (defmethod (setf input-position/compile) (value (input (eql 'character-input-stream)))
-  (setf (input-position/compile 'binary-input-stream) value))
+  (setf (stream-position/compile) value))
 
 (defmethod input-read/compile ((input (eql 'character-input-stream)))
-  (input-read/compile 'binary-input-stream))
+  `(the (or character (eql ,+input-eof+)) ,(stream-read/compile)))
