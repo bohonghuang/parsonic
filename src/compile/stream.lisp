@@ -18,7 +18,7 @@
                  (1- (buffered-streams::stream-ring-buffer-stream-end ,ring-buffer)))
              (prog1 (aref ,buffer (mod (- ,position ,offset) ,buffer-length))
                (setf (buffered-streams::stream-ring-buffer-stream-position ,ring-buffer) (1+ ,position)))
-             (buffered-streams::stream-ring-buffer-read-one ,ring-buffer +input-eof+))))))
+             (buffered-streams::stream-ring-buffer-read-element ,ring-buffer +input-eof+))))))
 
 (defun stream-position/compile ()
   `(buffered-streams::stream-ring-buffer-stream-position ,*input-ring-buffer*))
