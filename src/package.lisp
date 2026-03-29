@@ -1,6 +1,5 @@
 (defpackage parsonic
   (:use #:cl #:alexandria)
-  (:shadow #:gensym #:with-gensyms)
   (:export
    #:defparser
    #:parser

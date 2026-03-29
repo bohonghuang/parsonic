@@ -32,7 +32,13 @@
                 (body (let->body body (append args env-bindings)))
                 (args-optimized (loop :for arg :in args
                                       :for (var val) := arg
-                                      :unless (eq var val)
+                                      :if (eq var val)
+                                        :do (loop :for binding :in env-bindings
+                                                  :for (env-var env-val) := binding
+                                                  :when (eq env-var val)
+                                                    :unless (eq env-var env-val)
+                                                      :return (setf (third binding) t))
+                                      :else
                                         :unless (loop :with unused := t
                                                       :for (binding . rest) :on env-bindings
                                                       :for (env-var env-val) := binding

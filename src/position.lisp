@@ -8,6 +8,8 @@
 
 (defmethod expand-expr/compile ((op (eql 'position)) &rest args)
   (destructuring-bind (&optional position) args
-    (expand `(notinline (constantly ,(if position
-                                         (setf (input-position/compile *codegen-input*) position)
-                                         (input-position/compile *codegen-input*)))))))
+    (expand `(progn
+               (notinline)
+               (constantly ,(if position
+                                (setf (input-position/compile *codegen-input*) position)
+                                (input-position/compile *codegen-input*)))))))
