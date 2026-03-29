@@ -11,7 +11,7 @@
     (multiple-value-bind (declarations body) (body-declarations body)
       (multiple-value-bind (args ignored)
           (loop :for (name) :in bindings
-                :for gensym := (gensym)
+                :for gensym := (with-gensyms (ignored) ignored)
                 :if name
                   :collect name :into names
                 :else

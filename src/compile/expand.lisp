@@ -137,7 +137,7 @@
   (let ((table (make-hash-table :test #'eq)))
     (labels ((recur (form)
                (typecase form
-                 (symbol (if (symbol-package form) form (ensure-gethash form table (1+ (hash-table-count table)))))
+                 (symbol (if (get form 'gensym) (ensure-gethash form table (1+ (hash-table-count table))) form))
                  (cons (cons (recur (car form)) (recur (cdr form))))
                  (t form))))
       (let ((form (remove-intermediates (expand form))))

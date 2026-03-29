@@ -1,5 +1,13 @@
 (in-package #:parsonic)
 
+(defun gensym (&rest args)
+  (let ((symbol (apply #'cl:gensym args)))
+    (setf (get symbol 'gensym) t)
+    symbol))
+
+(defmacro with-gensyms (names &body body)
+  `(let ,(loop :for name :in names :collect `(,name (gensym ,(symbol-name name)))) . ,body))
+
 (defun parser-name-symbol (name &optional (intern t))
   (let ((package (if (eq (symbol-package name) #.(find-package :cl)) #.(find-package '#:parsonic) (symbol-package name)))
         (name (format nil "~A/~A" (string '#:parser) name)))

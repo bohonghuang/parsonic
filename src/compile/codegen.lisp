@@ -86,7 +86,7 @@
              `(let ((,position ,(input-position/compile *codegen-input*)))
                 (block ,block-outer
                   ,@(loop :for parser :in parsers
-                          :for block := (gensym (string '#:block))
+                          :for block := (with-gensyms (block) block)
                           :nconc (let ((*codegen-blocks* (cons block *codegen-blocks*)))
                                    `((block ,block
                                        (return-from ,block-outer ,(codegen parser)))
@@ -101,7 +101,7 @@
                     (loop :for name :in lambda-list
                           :for arg :in args
                           :if name
-                            :collect (gensym) :into vars
+                            :collect (with-gensyms (var) var) :into vars
                             :and :collect `(setf ,(lastcar vars) ,(codegen arg)) :into body
                           :else
                             :collect (let ((*codegen-make-list* (ignore-results)))
