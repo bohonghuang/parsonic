@@ -223,6 +223,11 @@
     (when (and (symbolp name) (get name 'parser))
       name)))
 
+(defmethod expand-expr/compile ((op (eql 'constantly)) &rest args)
+  (filter-lexical-env
+   (receive-lexical-env (call-next-method))
+   (rcurry #'gethash (form-symbol-set args))))
+
 (defun %expand-expr/compile (name lambda-list args body &aux (*expand/compile-cache* (or *expand/compile-cache* (make-hash-table :test #'equal))))
   (let ((lambda-list-args (loop :for (name default-value) :in (mapcar #'ensure-list lambda-list)
                                 :collect (cons name (if-let ((cons (assoc name args))) (cdr cons) default-value)))))
