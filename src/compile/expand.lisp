@@ -142,7 +142,7 @@
                  (t form))))
       (let ((form (remove-intermediates (expand form))))
         (case (car form)
-          ((curry rcurry) (gensym (symbol-name (car form))))
+          ((curry rcurry))
           (t (recur form)))))))
 
 (defun lambda-list-lexical-args (lambda-list-args)
@@ -261,15 +261,11 @@
                                   :unless (member name parser-arg-names)
                                     :collect (list name value)))
                  (known (cons (cons (cons name parsers) nil) *expand/compile-known*))
-                 (result (let ((*expand/compile-env* lexical-args)
-                               (*expand/compile-known* known))
-                           (expand body)))
-                 (result (if-let ((args (remove-if #'curry-arg-p lexical-args)))
-                           (send-lexical-env result args)
-                           result))
+                 (result (let ((*expand/compile-env* lexical-args) (*expand/compile-known* known)) (expand body)))
+                 (result (if-let ((args (remove-if #'curry-arg-p lexical-args))) (send-lexical-env result args) result))
                  (fname (cdr (first known)))
-                 (signature (list (cons (or fname name) (mapcar #'cdr parsers)) lambda-list))
-                 (result `(parser/unit ,signature ,result))
+                 (signature (when (every #'cdr parsers) (list (cons (or fname name) (mapcar #'cdr parsers)) lambda-list)))
+                 (result (if signature `(parser/unit ,signature ,result) result))
                  (bindings (loop :for arg :in lambda-list
                                  :unless (member arg lambda-list-keywords)
                                    :collect (etypecase arg
