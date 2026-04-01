@@ -179,32 +179,33 @@
          (apply #'expand-expr/compile object))))))
 
 (defun collect-parser-args (name lambda-list-args body)
-  (let ((lexical-args (lambda-list-lexical-args lambda-list-args)))
+  (let ((lexical-args (lambda-list-lexical-args lambda-list-args))
+        (skip-cache-p nil))
     (flet ((collect-parser-args ()
              (let ((*expand* #'collect-parser-args-expand)
                    (*expand/compile-env* lexical-args)
                    (*expand/compile-known* (cons (cons (cons name nil) :collect) *expand/compile-known*)))
+               (loop :for arg :in lexical-args
+                     :do (setf (lexical-arg-parser arg) (let ((parser (lexical-arg-parser arg)))
+                                                          (lambda (&rest args)
+                                                            (when args (setf skip-cache-p t))
+                                                            (apply parser args)))))
                (expand body)
-               (nconc
-                (loop :for (name . nil) :in lambda-list-args
-                      :for arg := (lexical-arg name)
-                      :unless (member name lambda-list-keywords)
-                        :collect (cons name (lexical-arg-parser-p arg)))
-                (loop :for arg :in lexical-args
-                      :when (curry-arg-p arg)
-                        :sum 1 :into name
-                        :and :collect (cons name (lexical-arg-parser-p arg)))))))
-      (let ((arg-info (ensure-gethash name *expand/compile-cache* (collect-parser-args))))
+               (loop :for (name . nil) :in lambda-list-args
+                     :for arg := (lexical-arg name)
+                     :unless (member name lambda-list-keywords)
+                       :collect (cons name (lexical-arg-parser-p arg))))))
+      (let ((arg-info (block skip-cache
+                        (ensure-gethash
+                         name *expand/compile-cache*
+                         (let ((args (collect-parser-args)))
+                           (if skip-cache-p (return-from skip-cache args) args))))))
         (if (find :collect *expand/compile-known* :key #'cdr)
             (throw 'collect-parser-args
               (loop :for arg :in lexical-args
                     :when (parser-arg-p arg)
                       :when (assoc-value arg-info (lexical-arg-name arg))
-                        :do (funcall (parser-arg-parser arg))
-                    :when (curry-arg-p arg)
-                      :sum 1 :into name
-                      :and :when (assoc-value arg-info name)
-                             :do (funcall (curry-arg-parser arg))))
+                        :do (funcall (parser-arg-parser arg))))
             (values arg-info lexical-args))))))
 
 (defun recursive-unit-name (definition)
