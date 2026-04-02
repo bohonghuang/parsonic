@@ -80,7 +80,7 @@
      (if (recursive-unit-name-p name)
          (list (cons t form))
          (loop :for (key . op) :in (trie-ensure-success (trie-extract body))
-               :collect (cons key `(parser/unit ((,key ,name) ,lambda-list) ,op)))))
+               :collect (cons key `(parser/unit ((,name (- . ,key)) ,lambda-list) ,op)))))
     ((parser/let bindings body)
      (loop :for (key . op) :in (trie-extract body)
            :collect (cons key `(parser/let ,bindings ,op))))

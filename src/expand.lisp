@@ -5,6 +5,15 @@
         (name (format nil "~A/~A" (string '#:parser) name)))
     (if intern (intern name package) (find-symbol name package))))
 
+(defun parser-symbol-name (symbol &aux (name (symbol-name symbol)))
+  (when (eql (search (string '#:parser/) name) 0)
+    (let ((package (symbol-package symbol))
+          (name (subseq name #.(length (string '#:parser/)))))
+      (when (eq package #.(find-package '#:parsonic))
+        (when-let ((symbol (find-symbol name #.(find-package :cl))))
+          (return-from parser-symbol-name symbol)))
+      (find-symbol name package))))
+
 (declaim (type function *expand*))
 (defvar *expand* #'expand/eval)
 

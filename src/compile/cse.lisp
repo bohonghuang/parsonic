@@ -99,8 +99,8 @@
                         (when signature (list (list* signature `(parser/constantly ,(cse-var)) `(parser/or))))
                         (loop :for (branch-signature . (then . else)) :in (cse-extract body)
                               :collect (list* branch-signature
-                                              `(parser/unit ((+ ,branch-signature ,name) (,(cse-var) . ,lambda-list)) ,then)
-                                              `(parser/unit ((- ,branch-signature ,name) ,lambda-list) ,else))))))
+                                              `(parser/unit ((,name (+ ,branch-signature)) (,(cse-var) . ,lambda-list)) ,then)
+                                              `(parser/unit ((,name (- ,branch-signature)) ,lambda-list) ,else))))))
          (when signature (push (cons form results) (gethash signature *cse-units*)))
          results)))
     ((parser/let bindings body)
