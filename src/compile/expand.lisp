@@ -203,7 +203,7 @@
                          name *expand/compile-cache*
                          (let ((args (collect-parser-args)))
                            (if skip-cache-p (return-from skip-cache args) args))))))
-        (if (find :collect *expand/compile-known* :key #'cdr)
+        (if (eq *expand* #'collect-parser-args-expand)
             (throw 'collect-parser-args
               (loop :for arg :in lexical-args
                     :when (parser-arg-p arg)
