@@ -128,8 +128,10 @@
       (destructuring-case form
         (((parser/funcall parser/apply) function &rest parsers)
          `(,(car form) ,(walk-parsers-in-lambda #'parser-signature-trim function) . ,(mapcar #'parser-signature-trim parsers)))
-        ((parser/let &rest args)
-         (parser-signature-trim (lastcar args)))
+        ((parser/let bindings body)
+         (if-let ((bindings (remove-if-not (compose #'constantp #'second) bindings)))
+           `(parser/let ,bindings ,(parser-signature-trim body))
+           (parser-signature-trim body)))
         ((parser/unit &rest args)
          (declare (ignore args))
          (butlast form))

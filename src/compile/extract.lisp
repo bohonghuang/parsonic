@@ -130,6 +130,8 @@
        ((parser/unit (name lambda-list))
         (declare (ignore lambda-list))
         (parser-unit-signature-name name))
+       ((parser/let bindings body)
+        (format nil "~A~{<~A>~}" (parser-unit-signature-name body) (mapcar #'second bindings)))
        ((t &rest args) (declare (ignore args))
         (multiple-value-call #'format nil "~A~{[~A]~}"
           (if-let ((name (parser-symbol-name (car object))))
