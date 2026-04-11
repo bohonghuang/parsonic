@@ -15,6 +15,9 @@
         ((parser/unit (name lambda-list) body)
          (let* ((bindings (loop :for (var val) :in env-bindings
                                 :collect (list var val nil)))
+                (lambda-list (loop :for arg :in lambda-list
+                                   :unless (and (symbolp arg) (get arg 'lexical-store))
+                                     :collect arg))
                 (body (let->body body bindings)))
            (loop :for (var val used) :in bindings
                  :for env-binding :in env-bindings
