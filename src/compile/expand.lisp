@@ -267,9 +267,11 @@
                                             :do (assert (parser-tree-p value))
                                             :always (equal (parser-signature (assoc-value lambda-list-args name)) value))
                                   :return fdef)))
-           (let ((fname (etypecase (cdr fdef)
-                          (boolean (setf (cdr fdef) (recursive-unit-name (car fdef))))
-                          (symbol (cdr fdef)))))
+           (let ((fname (setf (cdr fdef) (recursive-unit-name (car fdef)))))
+             (loop :for intermediary-fdef :in *expand/compile-known*
+                   :until (eq intermediary-fdef fdef)
+                   :unless (cdr intermediary-fdef)
+                     :do (setf (cdr intermediary-fdef) (caar intermediary-fdef)))
              `(parser/call ,fname . ,(mapcar #'cdr (remove-if (rcurry #'member (cdar fdef) :key #'car) args :key #'car))))
            (let* ((parser-arg-names (mapcar #'car (remove-if-not #'cdr arg-info)))
                   (parser-args (loop :for (name . value) :in lambda-list-args
@@ -281,21 +283,28 @@
                   (variables (loop :for (name . value) :in args
                                    :unless (member name parser-arg-names)
                                      :collect (list name value)))
-                  (known (cons (cons (cons name parser-args) nil) *expand/compile-known*))
-                  (env-vars (loop :for env :in *expand/compile-envs*
-                                  :nconc (loop :for arg :in env
-                                               :for name := (first (lexical-arg-send arg))
-                                               :unless (lexical-arg-parser-p arg)
-                                                 :do (assert (get name 'lexical-store))
-                                                 :and :collect (cons name (get name 'count)))))
-                  (result (let ((*expand/compile-envs* (cons lexical-args *expand/compile-envs*)) (*expand/compile-known* known)) (expand body)))
-                  (env-vars (loop :for (name . count) :in env-vars
-                                  :unless (eql count (get name 'count))
-                                    :collect name))
-                  (result (if-let ((args (remove-if #'curry-arg-p lexical-args))) (send-lexical-env result args) result))
-                  (fname (cdr (first known)))
-                  (signature (when (every #'cdr parser-args) (list (cons (or fname name) (mapcar #'cdr parser-args)) (nconc env-vars lambda-list))))
-                  (result (if signature `(parser/unit ,signature ,result) result))
+                  (signature (list (cons name (mapcar #'cdr parser-args)) lambda-list))
+                  (result (block skip-cache
+                            (ensure-gethash
+                             signature *expand/compile-cache*
+                             (let* ((known (cons (cons (cons name parser-args) nil) *expand/compile-known*))
+                                    (env-vars (loop :for env :in *expand/compile-envs*
+                                                    :nconc (loop :for arg :in env
+                                                                 :for name := (first (lexical-arg-send arg))
+                                                                 :unless (lexical-arg-parser-p arg)
+                                                                   :do (assert (get name 'lexical-store))
+                                                                   :and :collect (cons name (get name 'count)))))
+                                    (result (let ((*expand/compile-envs* (cons lexical-args *expand/compile-envs*)) (*expand/compile-known* known)) (expand body)))
+                                    (env-vars (loop :for (name . count) :in env-vars
+                                                    :unless (eql count (get name 'count))
+                                                      :collect name))
+                                    (result (if-let ((args (remove-if #'curry-arg-p lexical-args))) (send-lexical-env result args) result))
+                                    (fname (cdr (first known)))
+                                    (signature (when (every #'cdr parser-args) (list (cons (or fname name) (mapcar #'cdr parser-args)) (nconc env-vars lambda-list))))
+                                    (result (if signature `(parser/unit ,signature ,result) result)))
+                               (unless (and (null env-vars) (null fname) signature)
+                                 (return-from skip-cache result))
+                               result))))
                   (bindings (loop :for arg :in lambda-list
                                   :unless (member arg lambda-list-keywords)
                                     :collect (etypecase arg
