@@ -289,13 +289,9 @@
                                                  :do (assert (get name 'lexical-store))
                                                  :and :collect (cons name (get name 'count)))))
                   (result (let ((*expand/compile-envs* (cons lexical-args *expand/compile-envs*)) (*expand/compile-known* known)) (expand body)))
-                  (env-vars (loop :for env :in *expand/compile-envs*
-                                  :nconc (loop :for arg :in env
-                                               :for name := (first (lexical-arg-send arg))
-                                               :unless (lexical-arg-parser-p arg)
-                                                 :do (assert (get name 'lexical-store))
-                                                 :and :unless (eql (assoc-value env-vars name) (get name 'count))
-                                                        :collect name)))
+                  (env-vars (loop :for (name . count) :in env-vars
+                                  :unless (eql count (get name 'count))
+                                    :collect name))
                   (result (if-let ((args (remove-if #'curry-arg-p lexical-args))) (send-lexical-env result args) result))
                   (fname (cdr (first known)))
                   (signature (when (every #'cdr parser-args) (list (cons (or fname name) (mapcar #'cdr parser-args)) (nconc env-vars lambda-list))))
