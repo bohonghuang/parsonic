@@ -1,16 +1,24 @@
 (in-package #:parsonic)
 
 (defstruct parse-failure
-  position expected)
+  (backtrace nil :type cons))
+
+(defun parse-failure (backtrace)
+  (typecase backtrace
+    (cons (make-parse-failure :backtrace backtrace))
+    (parse-failure (parse-failure-backtrace backtrace))))
+
+(defun parse-failure-position (failure)
+  (cdr (parse-failure-backtrace failure)))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (setf (fdefinition 'parser-call) (fdefinition 'funcall)))
 
-(defun parser/satisfies (pred)
+(defun parser/satisfies (predicate)
   (lambda (input &aux (position (input-position/eval input)) (result (input-read/eval input)))
-    (if (funcall pred result)
+    (if (funcall predicate result)
         result
-        (make-parse-failure :position position :expected pred))))
+        (parse-failure (cons `(satisfies ,predicate) position)))))
 
 (defun parser/cons (car cdr)
   (lambda (input)
@@ -32,9 +40,7 @@
           :else
             :return result
           :do (setf (input-position/eval input) position)
-          :finally (return (make-parse-failure
-                            :position (input-position/eval input)
-                            :expected (cons 'or (mapcar #'parse-failure-expected errors)))))))
+          :finally (return (parse-failure (cons `(or . ,(mapcar #'parse-failure errors)) position))))))
 
 (defun parser/or (&rest parsers)
   (parser/%or parsers))
@@ -53,7 +59,7 @@
             :if (>= i from)
               :return results
             :else
-              :return result
+              :return (parse-failure (cons `(rep ,(parse-failure result)) position))
           :else
             :collect result :into results
           :finally (return results))))

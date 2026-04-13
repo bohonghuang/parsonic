@@ -18,27 +18,34 @@
     (declare (ignore allow-other-keys aux keyp))
     (values (nconc required (mapcar #'car optional) (mapcan #'car key) (when rest (list rest))) (if rest 'apply 'funcall))))
 
+(defun defparser/eval (name parser args)
+  (let ((parser (if (boundp name)
+                    (apply (symbol-value name) args)
+                    (let ((self #'values))
+                      (progv (list name)
+                          (list (lambda (&rest parser-args)
+                                  (if (equal args parser-args)
+                                      (lambda (input) (funcall self input))
+                                      (lambda (input) (funcall (apply name args) input)))))
+                        (setf self (funcall parser))))))
+        (name (parser-symbol-name name)))
+    (lambda (input &aux (position (input-position/eval input)) (result (parser-call parser input)))
+      (if (parse-failure-p result)
+          (parse-failure (cons `((,name) ,(parse-failure result)) position))
+          result))))
+
 (defmacro defparser (name lambda-list &body body)
   (let ((body (if (= (length body) 1) (first body) `(progn . ,body))))
     `(progn
-       ,(let ((name (parser-name-symbol name)))
-          (with-gensyms (self input args)
-            (multiple-value-bind (funcall-args funcall) (lambda-list-arguments lambda-list)
-              `(defun ,name ,(loop :for arg :in lambda-list
-                                   :for (name value) := (ensure-list arg)
-                                   :if value
-                                     :collect `(,name (parser ,value))
-                                   :else
-                                     :collect arg)
-                 (if (boundp ',name)
-                     (,funcall (symbol-value ',name) . ,funcall-args)
-                     (let* ((,self #'values)
-                            (,name (lambda (&rest ,args)
-                                     (if (equal ,args (,funcall #'list . ,funcall-args))
-                                         (lambda (,input) (funcall ,self ,input))
-                                         (lambda (,input) (funcall (,funcall #',name . ,funcall-args) ,input))))))
-                       (declare (type function ,self) (special ,name))
-                       (setf ,self (parser ,body))))))))
+       ,(let ((name (parser-name-symbol name))
+              (args (lambda-list-arguments lambda-list)))
+          `(defun ,name ,(loop :for arg :in lambda-list
+                               :for (name value) := (ensure-list arg)
+                               :if value
+                                 :collect `(,name (parser ,value))
+                               :else
+                                 :collect arg)
+             (defparser/eval ',name (lambda () (parser ,body)) (list . ,args))))
        ,(with-gensyms (op args)
           `(eval-when (:compile-toplevel :load-toplevel :execute)
              (defmethod expand-expr/compile ((,op (eql ',name)) &rest ,args)
