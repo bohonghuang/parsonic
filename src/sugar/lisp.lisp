@@ -56,10 +56,13 @@
   (destructuring-bind (function &rest args) args
     (expand `(apply ,function (list . ,args)))))
 
-(defmethod expand-expr ((op (eql 'list)) &rest args)
-  (loop :for body := '(parser/constantly nil) :then `(parser/cons ,(expand arg) ,body)
-        :for arg :in (reverse args)
+(defmethod expand-expr ((op (eql 'list*)) &rest args)
+  (loop :for body := (lastcar args) :then `(parser/cons ,(expand arg) ,body)
+        :for arg :in (nreverse (butlast args))
         :finally (return body)))
+
+(defmethod expand-expr ((op (eql 'list)) &rest args)
+  (expand `(list* ,@args (parser/constantly nil))))
 
 (defmethod expand-expr ((op (eql 'progn)) &rest args)
   (with-gensyms (var)
