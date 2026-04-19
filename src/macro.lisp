@@ -35,7 +35,8 @@
           result))))
 
 (defmacro defparser (name lambda-list &body body)
-  (let ((body (if (= (length body) 1) (first body) `(progn . ,body))))
+  (let ((docstring (when (stringp (car body)) (pop body)))
+        (body (if (= (length body) 1) (first body) `(progn . ,body))))
     `(progn
        ,(let ((name (parser-name-symbol name))
               (args (lambda-list-arguments lambda-list)))
@@ -45,10 +46,12 @@
                                  :collect `(,name (parser ,value))
                                :else
                                  :collect arg)
+             ,@(when docstring (list docstring))
              (defparser/eval ',name (lambda () (parser ,body)) (list . ,args))))
        ,(with-gensyms (op args)
           `(eval-when (:compile-toplevel :load-toplevel :execute)
              (defmethod expand-expr/compile ((,op (eql ',name)) &rest ,args)
+               ,@(when docstring (list docstring))
                (destructuring-bind ,(loop :for arg :in lambda-list
                                           :for (name value) := (ensure-list arg)
                                           :if value
