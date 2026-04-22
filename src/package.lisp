@@ -2,10 +2,9 @@
   (:use #:cl #:alexandria)
   (:export
    #:defparser
+   #:parser-call
    #:parser
    #:parser-run
-   #:parser-lambda
-   #:parser-call
    #:for
    #:cut
    #:opt
