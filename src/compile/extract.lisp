@@ -123,24 +123,6 @@
          (cons (car form) (mapcar #'parser-unit-walk (cdr form)))))
       form))
 
-(defun parser-unit-signature-name (object)
-  (typecase object
-    ((cons symbol list)
-     (destructuring-case object
-       ((parser/unit (name lambda-list))
-        (declare (ignore lambda-list))
-        (parser-unit-signature-name name))
-       ((parser/let bindings body)
-        (format nil "~A~{<~A>~}" (parser-unit-signature-name body) (mapcar #'second bindings)))
-       ((t &rest args) (declare (ignore args))
-        (multiple-value-call #'format nil "~A~{[~A]~}"
-          (if-let ((name (parser-symbol-name (car object))))
-            (values name (mapcar (compose #'parser-unit-signature-name #'car #'ensure-list) (cdr object)))
-            (values (car object) (mapcar #'parser-unit-signature-name (cdr object))))))))
-    (cons (format nil "~{~A~^_~}" (mapcar #'parser-unit-signature-name object)))
-    (symbol (symbol-name (or (parser-symbol-name object) object)))
-    (t (princ-to-string object))))
-
 (defparameter *parser-unit-extract-threshold-count* 2)
 (defparameter *parser-unit-extract-threshold-cost* 8)
 (defparameter *parser-unit-extract-threshold-total-cost* 32)
@@ -163,7 +145,7 @@
           :while unit
           :nconc (destructuring-ecase (parser-unit-tree unit)
                    ((parser/unit (name lambda-list) parser)
-                    (let ((name (gensym (format nil "~A_" (parser-unit-signature-name name))))
+                    (let ((name (parser-signature-gensym name))
                           (args (lambda-list-arguments lambda-list))
                           (count (if *parser-unit-extract-recursive-p* (1- (parser-unit-count unit)) (parser-unit-count unit))))
                       (parser-unit-mapc (lambda (unit) (decf (parser-unit-count unit) count)) unit)

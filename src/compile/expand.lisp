@@ -133,33 +133,6 @@
                        :do (incf (get var 'count 0))))))
   form)
 
-(defun parser-signature-trim (form)
-  (if (consp form)
-      (destructuring-case form
-        (((parser/funcall parser/apply) function &rest parsers)
-         `(,(car form) ,(walk-parsers-in-lambda #'parser-signature-trim function) . ,(mapcar #'parser-signature-trim parsers)))
-        ((parser/let bindings body)
-         (if-let ((bindings (remove-if-not (compose #'constantp #'second) bindings)))
-           `(parser/let ,bindings ,(parser-signature-trim body))
-           (parser-signature-trim body)))
-        ((parser/unit &rest args)
-         (declare (ignore args))
-         (butlast form))
-        ((t &rest args) (cons (car form) (mapcar #'parser-signature-trim args))))
-      form))
-
-(defun parser-signature (form)
-  (let ((table (make-hash-table :test #'eq)))
-    (labels ((recur (form)
-               (typecase form
-                 (symbol (if (symbol-package form) form (ensure-gethash form table (1+ (hash-table-count table)))))
-                 (cons (cons (recur (car form)) (recur (cdr form))))
-                 (t form))))
-      (let ((form (parser-signature-trim (expand form))))
-        (case (car form)
-          ((curry rcurry))
-          (t (recur form)))))))
-
 (defun lambda-list-lexical-args (lambda-list-args)
   (loop :with sequential-binding-p := nil
         :for (name . value) :in lambda-list-args
@@ -226,14 +199,12 @@
                         :do (funcall (parser-arg-parser arg))))
             (values arg-info lexical-args))))))
 
-(defun recursive-unit-name (definition)
-  (destructuring-bind (name &rest args) definition
-    (declare (ignore args))
-    (ensure-gethash
-     definition *expand/compile-cache*
-     (let ((name (gensym (symbol-name name))))
-       (setf (get name 'parser) name)
-       name))))
+(defun recursive-unit-name (signature)
+  (ensure-gethash
+   signature *expand/compile-cache*
+   (let ((name (parser-signature-gensym signature)))
+     (setf (get name 'parser) (first signature))
+     name)))
 
 (defun recursive-unit-name-p (name)
   (destructuring-bind (name &rest parsers) name
@@ -267,7 +238,7 @@
                                             :do (assert (parser-tree-p value))
                                             :always (equal (parser-signature (assoc-value lambda-list-args name)) value))
                                   :return fdef)))
-           (let ((fname (setf (cdr fdef) (recursive-unit-name (car fdef)))))
+           (let ((fname (setf (cdr fdef) (recursive-unit-name (cons (caar fdef) (mapcar #'cdr (cdar fdef)))))))
              (loop :for intermediary-fdef :in *expand/compile-known*
                    :until (eq intermediary-fdef fdef)
                    :unless (cdr intermediary-fdef)
