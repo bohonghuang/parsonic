@@ -27,14 +27,18 @@
               input)))))))
 
 (define-compiler-macro parser-run (&whole whole parser input)
-  (typecase parser
+  (typecase input
     (list
-     (destructuring-case parser
-       ((parser form)
-        (typecase input
+     (destructuring-case input
+       ((the type input)
+        (typecase parser
           (list
-           (destructuring-case input
-             ((the type input) `(funcall (parser/compile ,form ,type) ,input))
+           #+ccl
+           (when (and (parser-tree-p parser) (notany #'parser-tree-p (cdr parser)))
+             (when-let ((name (parser-symbol-name (car parser))))
+               (return-from parser-run `(funcall (parser/compile (,name . ,(cdr parser)) ,type) ,input))))
+           (destructuring-case parser
+             ((parser form) `(funcall (parser/compile ,form ,type) ,input))
              ((t &rest args) (declare (ignore args)) whole)))
           (t whole)))
        ((t &rest args) (declare (ignore args)) whole)))
