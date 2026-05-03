@@ -7,7 +7,7 @@
   :homepage "https://github.com/bohonghuang/parsonic"
   :bug-tracker "https://github.com/bohonghuang/parsonic/issues"
   :source-control (:git "https://github.com/bohonghuang/parsonic.git")
-  :depends-on (#:alexandria)
+  :depends-on (#:alexandria #:buffered-streams)
   :pathname "src/"
   :components ((:file "package")
                (:module "eval"
@@ -27,7 +27,8 @@
                              (:file "pool" :depends-on ("codegen"))
                              (:file "extract" :depends-on ("codegen" "signature"))
                              (:file "cse" :depends-on ("trie" "extract"))
-                             (:file "macro" :depends-on ("input" "expand" "stack" "codegen" "pool" "extract")))
+                             (:file "macro" :depends-on ("input" "expand" "stack" "codegen" "pool" "extract"))
+                             (:file "ring" :depends-on ("input")))
                 :depends-on ("package" "expand" "eval"))
                (:file "macro" :depends-on ("package" "expand" "compile"))
                (:module "sugar"

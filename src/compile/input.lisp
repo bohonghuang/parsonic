@@ -23,13 +23,12 @@
 
 (defmethod call-with-input/compile (body (input (eql +input-type-simple-array-unsigned-byte-8+)))
   (with-gensyms (index length)
-    (let ((input-var (intern (princ-to-string input) #.*package*)))
-      `(locally (declare (type (simple-array (unsigned-byte 8) (*)) ,input-var))
-         (let ((,index 0) (,length (length ,input-var)))
-           (declare (type non-negative-fixnum ,index ,length))
-           ,(let ((*input-index* index)
-                  (*input-length* length))
-              (funcall body input)))))))
+    `(locally (declare (type (simple-array (unsigned-byte 8) (*)) ,input))
+       (let ((,index 0) (,length (length ,input)))
+         (declare (type non-negative-fixnum ,index ,length))
+         ,(let ((*input-index* index)
+                (*input-length* length))
+            (funcall body input))))))
 
 (defmethod input-position/compile ((input (eql +input-type-simple-array-unsigned-byte-8+)))
   *input-index*)
@@ -41,7 +40,7 @@
   (let ((index *input-index*)
         (length *input-length*))
     `(if (< ,index ,length)
-         (prog1 (aref ,(intern (princ-to-string input) #.*package*) ,index) (incf ,index))
+         (prog1 (aref ,input ,index) (incf ,index))
          +input-eof+)))
 
 (setf (assoc-value *input-type-mappings* '(simple-array (unsigned-byte 8) (*)) :test #'equal) +input-type-simple-array-unsigned-byte-8+)
@@ -50,13 +49,12 @@
 
 (defmethod call-with-input/compile (body (input (eql +input-type-simple-array-character+)))
   (with-gensyms (index length)
-    (let ((input-var (intern (princ-to-string input) #.*package*)))
-      `(locally (declare (type (simple-array character (*)) ,input-var))
-         (let ((,index 0) (,length (length ,input-var)))
-           (declare (type non-negative-fixnum ,index ,length))
-           ,(let ((*input-index* index)
-                  (*input-length* length))
-              (funcall body input)))))))
+    `(locally (declare (type (simple-array character (*)) ,input))
+       (let ((,index 0) (,length (length ,input)))
+         (declare (type non-negative-fixnum ,index ,length))
+         ,(let ((*input-index* index)
+                (*input-length* length))
+            (funcall body input))))))
 
 (defmethod input-position/compile ((input (eql +input-type-simple-array-character+)))
   *input-index*)
@@ -68,7 +66,43 @@
   (let ((index *input-index*)
         (length *input-length*))
     `(if (< ,index ,length)
-         (prog1 (aref ,(intern (princ-to-string input) #.*package*) ,index) (incf ,index))
+         (prog1 (aref ,input ,index) (incf ,index))
          +input-eof+)))
 
 (setf (assoc-value *input-type-mappings* '(simple-array character (*)) :test #'equal) +input-type-simple-array-character+)
+
+(defun binary-stream-p (stream)
+  (subtypep (stream-element-type stream) '(unsigned-byte 8)))
+
+(deftype binary-input-stream ()
+  '(and stream (satisfies binary-stream-p) (satisfies input-stream-p)))
+
+(defmethod call-with-input/compile (body (input (eql 'binary-input-stream)))
+  (funcall body input))
+
+(defmethod input-position/compile ((input (eql 'binary-input-stream)))
+  `(file-position ,input))
+
+(defmethod (setf input-position/compile) (value (input (eql 'binary-input-stream)))
+  `(file-position ,input ,value))
+
+(defmethod input-read/compile ((input (eql 'binary-input-stream)))
+  `(read-byte ,input nil +input-eof+))
+
+(defun character-stream-p (stream)
+  (subtypep (stream-element-type stream) 'character))
+
+(deftype character-input-stream ()
+  '(and stream (satisfies character-stream-p) (satisfies input-stream-p)))
+
+(defmethod call-with-input/compile (body (input (eql 'character-input-stream)))
+  (funcall body input))
+
+(defmethod input-position/compile ((input (eql 'character-input-stream)))
+  `(file-position ,input))
+
+(defmethod (setf input-position/compile) (value (input (eql 'character-input-stream)))
+  `(file-position ,input ,value))
+
+(defmethod input-read/compile ((input (eql 'character-input-stream)))
+  `(read-char ,input nil +input-eof+))
