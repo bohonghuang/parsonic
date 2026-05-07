@@ -1,14 +1,16 @@
 (in-package #:parsonic)
 
+(define-constant +parser-name-prefix+ (string '#:parser/) :test #'string=)
+
 (defun parser-name-symbol (name &optional (intern t))
   (let ((package (if (eq (symbol-package name) #.(find-package :cl)) #.(find-package '#:parsonic) (symbol-package name)))
-        (name (format nil "~A/~A" (string '#:parser) name)))
+        (name (concatenate 'string +parser-name-prefix+ (symbol-name name))))
     (if intern (intern name package) (find-symbol name package))))
 
 (defun parser-symbol-name (symbol &aux (name (symbol-name symbol)))
-  (when (eql (search (string '#:parser/) name) 0)
+  (when (eql (search +parser-name-prefix+ name) 0)
     (let ((package (symbol-package symbol))
-          (name (subseq name #.(length (string '#:parser/)))))
+          (name (subseq name (length +parser-name-prefix+))))
       (when (eq package #.(find-package '#:parsonic))
         (when-let ((symbol (find-symbol name #.(find-package :cl))))
           (return-from parser-symbol-name symbol)))
