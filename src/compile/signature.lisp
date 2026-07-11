@@ -41,7 +41,7 @@
           (if-let ((name (parser-symbol-name (car object))))
             (values name (mapcar (compose #'parser-signature-name #'car #'ensure-list) (cdr object)))
             (values (car object) (mapcar #'parser-signature-name (cdr object))))))))
-    (cons (format nil "~{~A~^_~}" (mapcar #'parser-signature-name object)))
+    ((cons t list) (format nil "~{~A~^_~}" (mapcar #'parser-signature-name object)))
     (symbol (symbol-name (or (parser-symbol-name object) object)))
     (t (princ-to-string object))))
 
