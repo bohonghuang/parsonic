@@ -108,21 +108,21 @@
        (assert (eq lambda 'lambda))
        (if (ignore-results-p)
            (codegen `(parser/list . ,args))
-           (flet ((body (function)
-                    (loop :for name :in lambda-list
-                          :for arg :in args
-                          :if name
-                            :collect (with-gensyms (var) var) :into vars
-                            :and :collect `(setf ,(lastcar vars) ,(codegen arg)) :into body
-                          :else
-                            :collect (let ((*codegen-make-list* (ignore-results)))
-                                       (codegen arg))
-                              :into body
-                          :finally (return `(let ,vars ,@body ,(apply function vars))))))
-             (let ((function `(lambda ,(remove nil lambda-list) . ,body)))
-               (if (function-identity-p function)
-                   (body (curry #'list 'progn))
-                   (with-fresh-stack (body (curry #'list function))))))))
+           (flet ((body ()
+                    (let ((bindings (loop :for name :in lambda-list
+                                          :for arg :in args
+                                          :if name
+                                            :collect (list name (codegen arg))
+                                          :else
+                                            :collect (list (with-gensyms (var) (setf (get var 'ignore) t) var)
+                                                           (let ((*codegen-make-list* (ignore-results)))
+                                                             (codegen arg))))))
+                      `(let ,bindings
+                         (declare (ignore . ,(delete-if-not (rcurry #'get 'ignore) (mapcar #'first bindings))))
+                         . ,body))))
+             (if (function-identity-p `(lambda ,(remove nil lambda-list) . ,body))
+                 (body)
+                 (with-fresh-stack (body))))))
       ((parser/unit (name lambda-list) body)
        (if-let ((name (recursive-unit-name-p name)))
          (funcall *codegen-labels*
