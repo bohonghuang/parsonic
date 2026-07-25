@@ -20,7 +20,7 @@
                                          (loop :for (name lambda-list parser) :in functions
                                                :collect (list name lambda-list
                                                               (let ((*codegen-blocks* (cons name *codegen-blocks*)))
-                                                                (with-fresh-stack (codegen parser)))))
+                                                                (with-fresh-stack (codegen-unit parser)))))
                                        local-functions)
                                      :key #'first)
                              ,body)))))))

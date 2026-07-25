@@ -20,6 +20,29 @@
 (defun codegen-parse-error-p (result)
   `(eq ,result +codegen-parse-error+))
 
+(defvar *codegen-bounds-checked-p* nil)
+
+(defmacro with-enough-input ((form &optional (count-min 1) (count-max 1)) &body body)
+  (with-gensyms (codegen min max block)
+    `(flet ((,codegen () . ,body))
+       (if *codegen-bounds-checked-p*
+           (,codegen)
+           (multiple-value-bind (,min ,max) (compute-bounds/compile ,form)
+             (if (equal `(* ,,min ,,count-min) `(* ,,max ,,count-max))
+                 (let ((*codegen-bounds-checked-p* ,min))
+                   (with-gensyms (,block)
+                     `(block ,,block
+                        ,(call-with-enough-input/compile
+                          (lambda (*codegen-input*)
+                            `(return-from ,,block ,(,codegen)))
+                          *codegen-input* `(the non-negative-fixnum (* ,,min ,,count-min)))
+                        (return-from ,(car *codegen-blocks*) ,(codegen-parse-error)))))
+                 (,codegen)))))))
+
+(defun codegen-unit (form)
+  (with-enough-input (form)
+    (codegen form)))
+
 (defun codegen (form)
   (flet ((ignore-results-p ()
            (let ((*codegen-ignore-results-p* nil))
@@ -128,9 +151,9 @@
          (funcall *codegen-labels*
                   (list (list name lambda-list
                               (let ((*codegen-blocks* (cons name *codegen-blocks*)))
-                                (with-fresh-stack (codegen body)))))
+                                (with-fresh-stack (codegen-unit body)))))
                   (codegen `(parser/call ,name . ,(lambda-list-arguments lambda-list))))
-         (codegen body)))
+         (codegen-unit body)))
       ((parser/funcall function &rest args)
        (destructuring-ecase function
          ((lambda lambda-list &rest body)
@@ -164,46 +187,47 @@
                 ,result))))
       ((parser/constantly object) object)
       ((parser/rep parser from to)
-       (with-gensyms (block block-outer counter position cons-root cons)
-         (if-let ((list (funcall *codegen-make-list* 0))
-                  (make-list (funcall *codegen-make-list* 1)))
-           `(let ((,cons-root ,make-list)
-                  (,counter 0)
-                  (,position ,(input-position/compile *codegen-input*)))
-              (declare (type non-negative-fixnum ,counter))
-              (block ,block-outer
-                (loop :named ,block
-                      :initially (setf (cdr ,cons-root) nil)
-                      :for ,cons := ,cons-root :then (cdr ,cons)
-                      :repeat ,to
-                      :do (setf (cdr ,cons) ,(funcall
-                                              *codegen-cons*
-                                              (with-nested-stack
-                                                (let ((*codegen-blocks* (cons block *codegen-blocks*)))
-                                                  (codegen parser)))
-                                              nil)
-                                ,position ,(input-position/compile *codegen-input*)
-                                ,counter (1+ ,counter))
-                      :finally (return-from ,block-outer))
-                ,(setf (input-position/compile *codegen-input*) position))
-              (setf ,list (cdr ,cons-root))
-              (unless (>= ,counter ,from)
-                (return-from ,(car *codegen-blocks*) ,(codegen-parse-error)))
-              ,list)
-           `(let ((,counter 0)
-                  (,position ,(input-position/compile *codegen-input*)))
-              (declare (type non-negative-fixnum ,counter))
-              (block ,block-outer
-                (loop :named ,block
-                      :repeat ,to
-                      :do ,(let ((*codegen-blocks* (cons block *codegen-blocks*)))
-                             (codegen parser))
-                          (setf ,position ,(input-position/compile *codegen-input*)
-                                ,counter (1+ ,counter))
-                      :finally (return-from ,block-outer))
-                ,(setf (input-position/compile *codegen-input*) position))
-              (unless (>= ,counter ,from)
-                (return-from ,(car *codegen-blocks*) ,(codegen-parse-error)))))))
+       (with-enough-input (parser from to)
+         (with-gensyms (block block-outer counter position cons-root cons)
+           (if-let ((list (funcall *codegen-make-list* 0))
+                    (make-list (funcall *codegen-make-list* 1)))
+             `(let ((,cons-root ,make-list)
+                    (,counter 0)
+                    (,position ,(input-position/compile *codegen-input*)))
+                (declare (type non-negative-fixnum ,counter))
+                (block ,block-outer
+                  (loop :named ,block
+                        :initially (setf (cdr ,cons-root) nil)
+                        :for ,cons := ,cons-root :then (cdr ,cons)
+                        :repeat ,to
+                        :do (setf (cdr ,cons) ,(funcall
+                                                *codegen-cons*
+                                                (with-nested-stack
+                                                  (let ((*codegen-blocks* (cons block *codegen-blocks*)))
+                                                    (codegen parser)))
+                                                nil)
+                                  ,position ,(input-position/compile *codegen-input*)
+                                  ,counter (1+ ,counter))
+                        :finally (return-from ,block-outer))
+                  ,(setf (input-position/compile *codegen-input*) position))
+                (setf ,list (cdr ,cons-root))
+                (unless (>= ,counter ,from)
+                  (return-from ,(car *codegen-blocks*) ,(codegen-parse-error)))
+                ,list)
+             `(let ((,counter 0)
+                    (,position ,(input-position/compile *codegen-input*)))
+                (declare (type non-negative-fixnum ,counter))
+                (block ,block-outer
+                  (loop :named ,block
+                        :repeat ,to
+                        :do ,(let ((*codegen-blocks* (cons block *codegen-blocks*)))
+                               (codegen parser))
+                            (setf ,position ,(input-position/compile *codegen-input*)
+                                  ,counter (1+ ,counter))
+                        :finally (return-from ,block-outer))
+                  ,(setf (input-position/compile *codegen-input*) position))
+                (unless (>= ,counter ,from)
+                  (return-from ,(car *codegen-blocks*) ,(codegen-parse-error))))))))
       ((parser/case &rest branches)
        (with-gensyms (position block block-outer)
          (flet ((body ()
