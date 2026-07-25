@@ -22,22 +22,24 @@
 
 (defvar *codegen-bounds-checked-p* nil)
 
-(defmacro with-enough-input ((form &optional (count-min 1) (count-max 1)) &body body)
-  (with-gensyms (codegen min max block)
+(defmacro with-enough-input ((parser &optional (parser-min 1) (parser-max 1)) &body body)
+  (with-gensyms (codegen block min max)
     `(flet ((,codegen () . ,body))
        (if *codegen-bounds-checked-p*
            (,codegen)
-           (multiple-value-bind (,min ,max) (compute-bounds/compile ,form)
-             (if (equal `(* ,,min ,,count-min) `(* ,,max ,,count-max))
-                 (let ((*codegen-bounds-checked-p* ,min))
-                   (with-gensyms (,block)
-                     `(block ,,block
-                        ,(call-with-enough-input/compile
-                          (lambda (*codegen-input*)
-                            `(return-from ,,block ,(,codegen)))
-                          *codegen-input* `(the non-negative-fixnum (* ,,min ,,count-min)))
-                        (return-from ,(car *codegen-blocks*) ,(codegen-parse-error)))))
-                 (,codegen)))))))
+           (multiple-value-bind (,min ,max) (compute-bounds/compile ,parser)
+             (let ((,min (case ,parser-min (0 0) (1 ,min) (t `(the non-negative-fixnum (* ,,parser-min ,,min)))))
+                   (,max (case ,parser-max (0 0) (1 ,max) (t `(the non-negative-fixnum (* ,,parser-max ,,max))))))
+               (if (equal ,min ,max)
+                   (let ((*codegen-bounds-checked-p* ,min))
+                     (with-gensyms (,block)
+                       `(block ,,block
+                          ,(call-with-enough-input/compile
+                            (lambda (*codegen-input*)
+                              `(return-from ,,block ,(,codegen)))
+                            *codegen-input* ,min)
+                          (return-from ,(car *codegen-blocks*) ,(codegen-parse-error)))))
+                   (,codegen))))))))
 
 (defun codegen-unit (form)
   (with-enough-input (form)
