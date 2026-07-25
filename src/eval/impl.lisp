@@ -79,6 +79,8 @@
         (throw 'parser-run result)
         result)))
 
+(declaim (ftype (function (t) (values t)) expand))
+
 (defgeneric expand-expr/eval (op &rest args)
   (:method (op &rest args)
     (apply #'expand-expr op args))

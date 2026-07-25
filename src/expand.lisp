@@ -16,8 +16,8 @@
           (return-from parser-symbol-name symbol)))
       (find-symbol name package))))
 
-(declaim (type function *expand*))
 (defvar *expand* #'expand/eval)
+(declaim (type function *expand*))
 
 (defun expand (object)
   (funcall *expand* object))

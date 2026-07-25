@@ -12,9 +12,11 @@
   :components ((:file "package")
                (:module "eval"
                 :components ((:file "input")
-                             (:file "impl" :depends-on ("input")))
+                             (:file "impl" :depends-on ("input"))
+                             (:file "bounds"))
                 :depends-on ("package"))
                (:file "expand" :depends-on ("package" "eval"))
+               (:file "bounds" :depends-on ("package" "eval"))
                (:module "compile"
                 :components ((:file "input")
                              (:file "signature")
@@ -29,7 +31,7 @@
                              (:file "cse" :depends-on ("trie" "extract"))
                              (:file "macro" :depends-on ("input" "expand" "stack" "codegen" "pool" "extract"))
                              (:file "ring" :depends-on ("input")))
-                :depends-on ("package" "expand" "eval"))
+                :depends-on ("package" "expand" "bounds" "eval"))
                (:file "macro" :depends-on ("package" "expand" "compile"))
                (:module "sugar"
                 :components ((:file "eql")
