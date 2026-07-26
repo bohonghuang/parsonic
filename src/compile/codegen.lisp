@@ -201,7 +201,7 @@
                   (loop :named ,block
                         :initially (setf (cdr ,cons-root) nil)
                         :for ,cons := ,cons-root :then (cdr ,cons)
-                        :repeat ,to
+                        :repeat (the non-negative-fixnum ,to)
                         :do (setf (cdr ,cons) ,(funcall
                                                 *codegen-cons*
                                                 (with-nested-stack
@@ -221,7 +221,7 @@
                 (declare (type non-negative-fixnum ,counter))
                 (block ,block-outer
                   (loop :named ,block
-                        :repeat ,to
+                        :repeat (the non-negative-fixnum ,to)
                         :do ,(let ((*codegen-blocks* (cons block *codegen-blocks*)))
                                (codegen parser))
                             (setf ,position ,(input-position/compile *codegen-input*)
