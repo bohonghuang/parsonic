@@ -11,7 +11,7 @@
                               :collect (replace arg (ensure-list binding))))
                 (bindings (nconc args env-bindings)))
            `(,(car form) ,(walk-parsers-in-lambda (rcurry #'let->body bindings) `(lambda ,lambda-list . ,body))
-             . ,(mapcar (rcurry #'let->body bindings) parsers))))
+             . ,(mapcar (rcurry #'let->body env-bindings) parsers))))
         ((parser/unit (name lambda-list) body)
          (let* ((bindings (loop :for (var val) :in env-bindings
                                 :collect (list var val nil)))
