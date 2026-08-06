@@ -173,6 +173,30 @@
         ((t &rest args) (declare (ignore args)) (cons (car form) (mapcar #'flatmap->let (cdr form)))))
       form))
 
+(defun filter->constantly (form)
+  (if (consp form)
+      (destructuring-case form
+        ((parser/filter function &rest parsers)
+         (let ((parsers (mapcar #'filter->constantly parsers)))
+           (if (every (compose (curry #'eq 'parser/constantly) #'car) parsers)
+               (destructuring-ecase function
+                 ((lambda lambda-list &rest body)
+                  (assert (every #'symbolp lambda-list))
+                  (assert (= (length lambda-list) (length parsers)))
+                  (assert (null (intersection lambda-list lambda-list-keywords)))
+                  (multiple-value-bind (bindings ignored)
+                      (loop :for arg :in lambda-list
+                            :for (parser/constantly value) :in parsers
+                            :do (assert (eq parser/constantly 'parser/constantly))
+                            :unless arg
+                              :collect (setf arg (with-gensyms (arg) arg)) :into ignored
+                            :collect `(,arg ,value) :into bindings
+                            :finally (return (values bindings ignored)))
+                    `(parser/constantly (let ,bindings (declare (ignore . ,ignored)) . ,body)))))
+               `(parser/filter ,function . ,parsers))))
+        ((t &rest args) (declare (ignore args)) (cons (car form) (mapcar #'filter->constantly (cdr form)))))
+      form))
+
 (defparameter *eql-list->eql*-threshold* 4)
 
 (defun eql-list->eql* (form)
@@ -230,7 +254,8 @@
 (defparameter *optimize-passes* '(let->body satisfies->eql ors->or conses->list
                                   apply->funcall funcalls->funcall
                                   flatmap->map flatmap->let let->body
-                                  or->cse or->trie eql-list->eql*))
+                                  or->cse filter->constantly flatmap->let
+                                  or->trie eql-list->eql*))
 
 (defun optimize/compile (initial)
   (loop :for form := initial :then (funcall pass form)
