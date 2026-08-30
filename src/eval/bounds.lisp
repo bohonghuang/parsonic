@@ -16,7 +16,7 @@
          (multiple-value-bind (min2 max2) (compute-bounds cdr)
            (values (+ min1 min2) (+ max1 max2))))))
     ((parser/or &rest args)
-     (loop :for arg :in (or args (return (values 0 most-positive-fixnum)))
+     (loop :for arg :in (or args (return (values 0 0)))
            :for (min-arg max-arg) := (multiple-value-list (compute-bounds arg))
            :minimize min-arg :into min :of-type non-negative-integer
            :maximize max-arg :into max :of-type non-negative-integer
