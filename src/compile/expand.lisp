@@ -273,7 +273,7 @@
                                     (fname (cdr (first known)))
                                     (signature (when (every #'cdr parser-args) (list (cons (or fname name) (mapcar #'cdr parser-args)) (nconc env-vars lambda-list))))
                                     (result (if signature `(parser/unit ,signature ,result) result)))
-                               (unless (and (null env-vars) (null fname) signature)
+                               (unless (and (null env-vars) signature)
                                  (return-from skip-cache result))
                                result))))
                   (bindings (loop :for arg :in lambda-list
