@@ -21,9 +21,9 @@
                 (body (let->body body bindings)))
            (loop :for (var val used) :in bindings
                  :for env-binding :in env-bindings
-                 :for (env-var env-val env-used) := env-binding
+                 :for (env-var env-val) := env-binding
                  :do (assert (eq var env-var)) (assert (eq val env-val))
-                 :when (and used (not env-used))
+                 :when used
                    :do (setf (third env-binding) t)
                        (unless (eq lambda-list (pushnew var lambda-list :key (compose #'car #'ensure-list)))
                          (assert (not (recursive-unit-name-p name)))))
