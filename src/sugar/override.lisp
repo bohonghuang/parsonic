@@ -4,17 +4,16 @@
 (defun not-eof-p (object)
   (not (eq object +input-eof+)))
 
-(defmethod expand-expr :around ((op symbol) &rest args)
-  (destructuring-case (cons op args)
-    ((satisfies predicate)
-     (if (and (consp predicate) (equal predicate `(curry #'eql ,(caddr predicate))))
-         (call-next-method)
-         (call-next-method
-          op (if (equal predicate '(constantly t))
-                 '#'not-eof-p
-                 (with-gensyms (result)
-                   `(lambda (,result)
-                      (and (not-eof-p ,result) (funcall ,predicate ,result))))))))
-    ((rep parser &optional (from 0) (to most-positive-fixnum))
-     (call-next-method op parser from to))
-    ((t &rest args) (declare (ignore args)) (call-next-method))))
+(defmethod expand-expr ((op (eql 'satisfies)) &rest args)
+  (destructuring-bind (predicate) args
+    `(parser/satisfies
+      ,(cond
+         ((and (consp predicate) (equal predicate `(curry #'eql ,(caddr predicate)))) predicate)
+         ((equal predicate '(constantly t)) '#'not-eof-p)
+         (t (with-gensyms (result)
+              `(lambda (,result)
+                 (and (not-eof-p ,result) (funcall ,predicate ,result)))))))))
+
+(defmethod expand-expr ((op (eql 'rep)) &rest args)
+  (destructuring-bind (parser &optional (from 0) (to most-positive-fixnum)) args
+    `(parser/rep ,(expand parser) ,from ,to)))
