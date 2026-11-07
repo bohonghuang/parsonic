@@ -291,6 +291,15 @@
              result)))
         (rcurry #'gethash (form-symbol-set (mapcar #'cdr (remove-if (curry #'assoc-value arg-info) args :key #'car)))))))))
 
+(defmacro define-symbol-expr-expander (name)
+  (with-gensyms (op args expander)
+    `(defmethod ,name ((,op symbol) &rest ,args)
+       (if-let ((,expander (get ,op ',name)))
+         (apply ,expander ,args)
+         (call-next-method)))))
+
+(define-symbol-expr-expander expand-expr/compile)
+
 (defun walk-parsers-in-lambda (function form)
   (typecase form
     (null form)

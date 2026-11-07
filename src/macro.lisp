@@ -36,33 +36,37 @@
 
 (defmacro defparser (name lambda-list &body body)
   (let ((docstring (when (stringp (car body)) (pop body)))
+        (fname (parser-name-symbol name))
         (body (if (= (length body) 1) (first body) `(progn . ,body))))
     `(progn
-       ,(let ((name (parser-name-symbol name))
-              (args (lambda-list-arguments lambda-list)))
-          `(defun ,name ,(loop :for arg :in lambda-list
-                               :for (name value) := (ensure-list arg)
-                               :if value
-                                 :collect `(,name (parser ,value))
-                               :else
-                                 :collect arg)
+       ,(let ((args (lambda-list-arguments lambda-list)))
+          `(defun ,fname ,(loop :for arg :in lambda-list
+                                :for (name value) := (ensure-list arg)
+                                :if value
+                                  :collect `(,name (parser ,value))
+                                :else
+                                  :collect arg)
              ,@(when docstring (list docstring))
-             (defparser/eval ',name (lambda () (parser ,body)) (list . ,args))))
-       ,(with-gensyms (op args)
-          `(eval-when (:compile-toplevel :load-toplevel :execute)
-             (defmethod expand-expr/compile ((,op (eql ',name)) &rest ,args)
-               ,@(when docstring (list docstring))
-               (destructuring-bind ,(loop :for arg :in lambda-list
-                                          :for (name value) := (ensure-list arg)
-                                          :if value
-                                            :collect `(,name (quote ,value))
-                                          :else
-                                            :collect arg)
-                   ,args
-                 (%expand-expr/compile
-                  ',name
-                  ',lambda-list
-                  (subseq
-                   (list . ,(loop :for variable :in (lambda-list-arguments lambda-list) :collect `(cons ',variable ,variable)))
-                   0 (length ,args))
-                  ',body))))))))
+             (defparser/eval ',fname (lambda () (parser ,body)) (list . ,args))))
+       ,(with-gensyms (args)
+          (let ((fname (symbolicate '#:expand- fname)))
+            `(eval-when (:compile-toplevel :load-toplevel :execute)
+               (defun ,fname (&rest ,args)
+                 ,@(when docstring (list docstring))
+                 (destructuring-bind
+                     ,(loop :for arg :in lambda-list
+                            :for (name value) := (ensure-list arg)
+                            :if value
+                              :collect `(,name (quote ,value))
+                            :else
+                              :collect arg)
+                     ,args
+                   (%expand-expr/compile
+                    ',name
+                    ',lambda-list
+                    (subseq
+                     (list . ,(loop :for variable :in (lambda-list-arguments lambda-list)
+                                    :collect `(cons ',variable ,variable)))
+                     0 (length ,args))
+                    ',body)))
+               (setf (get ',name 'expand-expr/compile) #',fname)))))))
