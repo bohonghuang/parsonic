@@ -180,7 +180,9 @@
        (with-gensyms (arg)
          (codegen `(parser/funcall (lambda (,arg) (apply ,function ,arg)) ,parser))))
       ((parser/let bindings body)
-       `(let ,bindings ,(codegen body)))
+       `(let ,bindings
+          (declare (ignorable . ,(mapcar #'first bindings)))
+          ,(codegen body)))
       ((parser/call name &rest args)
        (with-gensyms (result error-info)
          `(multiple-value-bind (,result ,error-info) (,name . ,args)
